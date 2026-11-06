@@ -6,6 +6,8 @@ import { Session } from './session.js'
 import { SignIn, Invitation } from './Authentication.js'
 import { Organizations, Organization } from './Organizations.js'
 import styles from './App.module.css'
+import { ProposalList, ProposalDetail, ProjectOverview } from './Proposals.js'
+import { ProposalEditor } from './ProposalEditor.js'
 function consumeToken() {
   const token = new URLSearchParams(window.location.hash.slice(1)).get('token')
   if (window.location.hash)
@@ -184,6 +186,52 @@ export function App() {
                   path="/organizations/:id"
                   element={
                     user ? <Organization /> : <Navigate to="/sign-in" replace />
+                  }
+                />
+                <Route
+                  path="/organizations/:orgId/proposals"
+                  element={
+                    user ? <ProposalList /> : <Navigate to="/sign-in" replace />
+                  }
+                />
+                <Route
+                  path="/organizations/:orgId/proposals/new"
+                  element={
+                    user?.role === 'OWNER' ? (
+                      <ProposalEditor />
+                    ) : (
+                      <Navigate to="/" replace />
+                    )
+                  }
+                />
+                <Route
+                  path="/organizations/:orgId/proposals/:proposalId"
+                  element={
+                    user ? (
+                      <ProposalDetail />
+                    ) : (
+                      <Navigate to="/sign-in" replace />
+                    )
+                  }
+                />
+                <Route
+                  path="/organizations/:orgId/proposals/:proposalId/versions/:versionId/edit"
+                  element={
+                    user?.role === 'OWNER' ? (
+                      <ProposalEditor />
+                    ) : (
+                      <Navigate to="/" replace />
+                    )
+                  }
+                />
+                <Route
+                  path="/organizations/:orgId/projects/:projectId"
+                  element={
+                    user ? (
+                      <ProjectOverview />
+                    ) : (
+                      <Navigate to="/sign-in" replace />
+                    )
                   }
                 />
                 <Route

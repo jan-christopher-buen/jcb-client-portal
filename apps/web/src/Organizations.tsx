@@ -276,6 +276,14 @@ export function Organization() {
         data && (
           <>
             <h1>{data.organization.name}</h1>
+            <p>
+              <Link
+                className={styles.actionLink}
+                to={`/organizations/${id}/proposals`}
+              >
+                Proposals and projects
+              </Link>
+            </p>
             {data.organization.archivedAt && (
               <p className={styles.notice}>
                 Archived organization. Restore it to issue invitations.
@@ -286,8 +294,8 @@ export function Organization() {
                 <h2>Your organization access is active.</h2>
                 <p>
                   You can access this organization through your accepted
-                  invitation. Project and proposal workflows will be added in a
-                  later slice.
+                  invitation. Use Proposals and projects to review shared scope
+                  and open planned projects.
                 </p>
               </section>
             ) : (
@@ -512,7 +520,7 @@ export function Organization() {
                   {!data.invitations?.length && <p>No invitations yet.</p>}
                 </section>
                 <section className={styles.panel}>
-                  <h2>Access activity</h2>
+                  <h2>Activity history</h2>
                   <ul className={styles.recordList}>
                     {data.activities?.map((event) => (
                       <li key={event.id}>

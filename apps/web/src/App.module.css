@@ -523,3 +523,67 @@
 .workMain {
   overflow-wrap: anywhere;
 }
+
+.versionLinks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 24px 0;
+}
+.versionLinks [aria-pressed='true'] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.preserveText {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.tableScroll {
+  overflow-x: auto;
+  margin: 24px 0;
+}
+.costTable {
+  width: 100%;
+  min-width: 560px;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 14px;
+}
+.costTable caption {
+  text-align: left;
+  color: var(--muted);
+  padding: 12px 0;
+}
+.costTable th,
+.costTable td {
+  border-bottom: 1px solid var(--border);
+  padding: 12px;
+  vertical-align: top;
+}
+.costTable td:first-child {
+  max-width: 400px;
+  white-space: pre-wrap;
+}
+.costTable tfoot {
+  color: var(--accent);
+}
+.editorFields {
+  border: none;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.itemEditor {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 16px;
+  min-width: 0;
+  margin: 24px 0;
+}
+.itemEditor legend {
+  color: var(--accent);
+  padding: 0 8px;
+}
+.itemEditor .panels {
+  margin: 0 0 16px;
+}
