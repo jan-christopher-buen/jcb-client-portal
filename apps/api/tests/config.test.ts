@@ -16,6 +16,10 @@ describe('environment and database safety', () => {
       'postgresql://localhost/jcb_portal_dev',
       'postgresql://remote.example/jcb_portal_test',
       'postgresql://localhost/production',
+      'postgresql://localhost/jcb_portal_test?host=remote.example',
+      'postgresql://localhost/jcb_portal_test?host=/var/run/postgresql',
+      'postgresql://localhost/jcb_portal_test?database=production',
+      'postgresql://localhost/jcb_portal_test#unexpected',
     ]) {
       expect(() => testDatabase({ TEST_DATABASE_URL: value })).toThrow()
     }
@@ -32,9 +36,30 @@ describe('environment and database safety', () => {
       }),
     ).toThrow()
   })
+  it('rejects malformed database configuration without echoing its input', () => {
+    const value = 'malformed-sensitive-database-value'
+    expect(() => localDatabase(value, 'test')).toThrow('Invalid database URL')
+    try {
+      localDatabase(value, 'test')
+    } catch (error) {
+      expect(String(error)).not.toContain(value)
+    }
+    expect(() =>
+      testDatabase({
+        TEST_DATABASE_URL: 'postgresql://localhost/jcb_portal_test',
+        DATABASE_URL: value,
+      }),
+    ).toThrow('Invalid database URL')
+  })
   it('prevents local seed and migration against other databases', () => {
     expect(() =>
       localDatabase('postgresql://localhost/postgres', 'dev'),
+    ).toThrow()
+    expect(() =>
+      localDatabase(
+        'postgresql://localhost/jcb_portal_dev?host=remote.example',
+        'dev',
+      ),
     ).toThrow()
   })
 })
