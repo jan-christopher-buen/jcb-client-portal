@@ -1,6 +1,6 @@
 # ADR-001: Local modular monolith
 
-Status: accepted for M1 local work. Hosting is undecided.
+Status: accepted for M1 local work. Hosting is undecided. Authentication and invitation behavior is now superseded by [ADR-002](002-authentication-and-invitations.md); the M1 details below are retained as the foundation decision record.
 
 Use npm workspaces with React, strict TypeScript, Vite, React Router, and CSS modules in `apps/web`; Express 5 and ESM in `apps/api`; small Zod contracts in `packages/contracts`. PostgreSQL holds server-side sessions. Production Express serves the compiled web app and API from one origin; Vite proxies `/api` during development.
 

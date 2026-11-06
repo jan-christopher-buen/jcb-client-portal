@@ -1,5 +1,7 @@
 # M1 local scope
 
+Historical foundation snapshot. See [the authentication slice](auth-slice.md) for the current implemented scope.
+
 Implemented: workspace/tooling, session migration, API bootstrap, signed-out contract, sign-in layout, responsive application frame, safe missing-page response, connectivity loading/error/retry states, CI configuration, and local setup documentation.
 
 The shell exposes only Sign in. There are no dashboard metrics, role selectors, business actions, accounts, invitations, or fixture records. A compact inline navigation replaces the desktop sidebar on mobile; with one link a drawer adds no value. Labels, a skip link, visible keyboard focus, and readable disabled controls support the shell's limited interactions.
