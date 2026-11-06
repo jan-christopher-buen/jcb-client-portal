@@ -224,6 +224,9 @@ afterAll(async () => {
       where: { organizationId: { in: orgIds } },
       select: { id: true },
     })
+    await tx.handoverEvent.deleteMany({
+      where: { organizationId: { in: orgIds } },
+    })
     await tx.activityEvent.deleteMany({
       where: { organizationId: { in: orgIds } },
     })
@@ -467,6 +470,7 @@ describe('project lifecycle and immutable milestone reviews', () => {
         await mutate(own, 'patch', path, {
           ...milestoneInput(7),
           required: false,
+          requiredChangeReason: 'Milestone is explicitly optional for closure.',
           expectedRevision: 0,
         })
       ).status,

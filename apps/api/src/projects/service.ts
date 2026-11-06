@@ -15,6 +15,7 @@ import type {
   Project,
   Milestone,
 } from '../generated/prisma/client.js'
+import { handoverEvent } from '../handover/audit.js'
 import { HttpError, notFound } from '../errors.js'
 import {
   serialTransaction,
@@ -30,10 +31,14 @@ function owner(actor: Actor) {
     throw new HttpError(403, 'FORBIDDEN', 'Owner access required.')
 }
 function writable(project: Project) {
-  if (project.status === 'ON_HOLD' || project.status === 'CANCELLED')
+  if (
+    project.status === 'ON_HOLD' ||
+    project.status === 'CANCELLED' ||
+    project.status === 'COMPLETED'
+  )
     throw conflict(
       'PROJECT_PAUSED',
-      'This project is on hold or cancelled. Workflow changes are unavailable.',
+      'This project is on hold, cancelled or completed. Workflow changes are unavailable.',
     )
 }
 async function locked<T>(
@@ -135,7 +140,10 @@ export async function transitionProject(
     ) {
       status = 'ON_HOLD'
       resumeStatus = p.status
-    } else if (data.action === 'CANCEL' && p.status !== 'CANCELLED')
+    } else if (
+      data.action === 'CANCEL' &&
+      !['CANCELLED', 'COMPLETED'].includes(p.status)
+    )
       status = 'CANCELLED'
     else
       throw conflict(
@@ -191,6 +199,7 @@ export async function editMilestone(
   actor: Actor,
   input: MilestoneInput,
   expected: number,
+  requiredChangeReason = '',
 ) {
   owner(actor)
   const data = milestoneInputSchema.parse(input)
@@ -203,6 +212,22 @@ export async function editMilestone(
         'SNAPSHOT_IMMUTABLE',
         'Withdraw the current review or reopen the accepted milestone before editing.',
       )
+    if (m.required !== data.required) {
+      if (!requiredChangeReason.trim())
+        throw conflict(
+          'REQUIRED_FLAG_REASON',
+          'Changing the required flag needs an explicit reason.',
+        )
+      await handoverEvent(
+        tx,
+        p,
+        actor,
+        'REQUIRED_FLAG_CHANGED',
+        mid,
+        requiredChangeReason,
+        { resource: 'milestone', before: m.required, after: data.required },
+      )
+    }
     await tx.milestone.update({
       where: { id: mid },
       data: {
