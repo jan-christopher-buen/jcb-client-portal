@@ -223,6 +223,9 @@ afterAll(async () => {
       where: { organizationId: { in: orgIds } },
       select: { id: true },
     })
+    await tx.handoverEvent.deleteMany({
+      where: { organizationId: { in: orgIds } },
+    })
     await tx.activityEvent.deleteMany({
       where: { organizationId: { in: orgIds } },
     })
@@ -571,6 +574,7 @@ describe('versioned deliverables', () => {
       (
         await mutate(own, 'patch', `${deliverableBase(pid)}/${did}`, {
           required: false,
+          requiredChangeReason: 'This deliverable is optional for handover.',
           position: 3,
           expectedRevision: d.revision,
         })

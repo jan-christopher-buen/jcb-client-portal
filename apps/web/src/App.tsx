@@ -8,6 +8,7 @@ import { Organizations, Organization } from './Organizations.js'
 import styles from './App.module.css'
 import { ProposalList, ProposalDetail } from './Proposals.js'
 import { ProjectOverview, MilestoneReview } from './Projects.js'
+import { Handover } from './Handover.js'
 import { DeliverableDetail, DeliverableEditor } from './Deliverables.js'
 import { ChangeList, ChangeDetail, ChangeOfferEditor } from './Changes.js'
 import { ProposalEditor } from './ProposalEditor.js'
@@ -225,6 +226,12 @@ export function App() {
                     ) : (
                       <Navigate to="/" replace />
                     )
+                  }
+                />
+                <Route
+                  path="/organizations/:orgId/projects/:projectId/handover"
+                  element={
+                    user ? <Handover /> : <Navigate to="/sign-in" replace />
                   }
                 />
                 <Route

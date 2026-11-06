@@ -1,5 +1,7 @@
 # Versioned deliverable reviews
 
+Later extension: [ADR-007](007-project-handover.md) adds guarded completion/reopening, auditable required flags and explicit change-request/draft resolution. Its rules supersede earlier deferred-completion descriptions below.
+
 Deliverables belong to an organization/project through composite foreign keys. Required flag and stable display order are audited metadata. Text/title/links belong to versions; drafts are owner-only, including a wholly unpublished deliverable. Clients receive only non-draft versions, without owner notes. Reads validate current active membership in a repeatable-read snapshot. Every nested resource identifier is scoped server-side.
 
 A deliverable has at most one draft and one published version, enforced by partial unique indexes. Numbering is unique and bounded to 100. Creating a draft preserves the current pointer; publishing atomically supersedes the previous published snapshot and advances the pointer. Accepted snapshots remain immutable but can be replaced with a reason and a new review. Withdrawn versions remain in history. Withdrawal is limited to an undecided current version. There are no deletion endpoints.

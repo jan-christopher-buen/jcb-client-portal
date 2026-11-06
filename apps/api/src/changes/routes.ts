@@ -1,6 +1,7 @@
 import { Router, type Request } from 'express'
 import { z } from 'zod'
 import {
+  closeChangeSchema,
   changeRequestSchema,
   changeMessageSchema,
   changeOfferEditSchema,
@@ -14,6 +15,8 @@ import { requireUser, requireOwner } from '../auth/security.js'
 import {
   createChange,
   listChanges,
+  abandonOffer,
+  closeChange,
   readChange,
   addMessage,
   draftOffer,
@@ -150,6 +153,37 @@ export function changeRoutes(db: PrismaClient) {
           req.user!,
           expectedRevision,
           note,
+        ),
+      )
+    },
+  )
+  router.post('/changes/:requestId/close', requireOwner(), async (req, res) => {
+    const data = closeChangeSchema.parse(req.body)
+    res.json(
+      await closeChange(
+        db,
+        ...ids(req),
+        uuid(req.params.requestId),
+        req.user!,
+        data.expectedRevision,
+        data.reason,
+      ),
+    )
+  })
+  router.post(
+    '/changes/:requestId/offers/:offerId/abandon',
+    requireOwner(),
+    async (req, res) => {
+      const data = closeChangeSchema.parse(req.body)
+      res.json(
+        await abandonOffer(
+          db,
+          ...ids(req),
+          uuid(req.params.requestId),
+          uuid(req.params.offerId),
+          req.user!,
+          data.expectedRevision,
+          data.reason,
         ),
       )
     },

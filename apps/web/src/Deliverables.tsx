@@ -85,7 +85,7 @@ export function ProjectDeliverables() {
     resource = useResource<DeliverableListDto>(base)
   const paused =
     resource.data &&
-    ['ON_HOLD', 'CANCELLED'].includes(resource.data.project.status)
+    ['ON_HOLD', 'CANCELLED', 'COMPLETED'].includes(resource.data.project.status)
   const unused =
     Array.from({ length: 100 }, (_, i) => i + 1).find(
       (p) => !resource.data?.deliverables.some((d) => d.position === p),
@@ -127,7 +127,7 @@ export function ProjectDeliverables() {
               })}
             </ul>
             <p>
-              Deliverable acceptance does not complete the project. Linked
+              Deliverable acceptance alone does not complete the project. Linked
               resources remain under the external provider's access rules.
             </p>
             {user?.role === 'OWNER' &&
@@ -142,8 +142,8 @@ export function ProjectDeliverables() {
               )}
             {paused && (
               <p>
-                Workflow changes are unavailable while the project is on hold or
-                cancelled.
+                Workflow changes are unavailable while the project is on hold,
+                cancelled or completed.
               </p>
             )}
           </>
@@ -169,7 +169,9 @@ export function DeliverableDetail() {
   const data = resource.data,
     d = data?.deliverable,
     owner = user?.role === 'OWNER',
-    paused = data && ['ON_HOLD', 'CANCELLED'].includes(data.project.status)
+    paused =
+      data &&
+      ['ON_HOLD', 'CANCELLED', 'COMPLETED'].includes(data.project.status)
   const v =
       d?.versions.find(
         (v) => v.id === (search.get('version') ?? d.currentVersionId),
@@ -458,6 +460,7 @@ function MetadataForm({
   path: string
   reload: () => void
 }) {
+  const [requiredChangeReason, setRequiredChangeReason] = useState('')
   const [required, setRequired] = useState(d.required),
     [position, setPosition] = useState(d.position),
     [busy, setBusy] = useState(false),
@@ -474,6 +477,7 @@ function MetadataForm({
         required,
         position,
         expectedRevision: d.revision,
+        requiredChangeReason,
       })
       reload()
     } catch (e) {
@@ -510,6 +514,20 @@ function MetadataForm({
           Use an unused slot. Changes are visible to the client and recorded in
           history.
         </p>
+        {required !== d.required && (
+          <>
+            <label htmlFor="deliverable-required-reason">
+              Required-flag change reason
+            </label>
+            <textarea
+              id="deliverable-required-reason"
+              required
+              maxLength={2000}
+              value={requiredChangeReason}
+              onChange={(e) => setRequiredChangeReason(e.target.value)}
+            />
+          </>
+        )}
         <button disabled={busy}>Save deliverable settings</button>
       </fieldset>
     </form>
@@ -531,7 +549,9 @@ export function DeliverableEditor() {
       ) : (
         resource.data &&
         (v?.state === 'DRAFT' &&
-        !['ON_HOLD', 'CANCELLED'].includes(resource.data.project.status) ? (
+        !['ON_HOLD', 'CANCELLED', 'COMPLETED'].includes(
+          resource.data.project.status,
+        ) ? (
           <ContentForm
             key={v.id}
             base={base}
@@ -542,7 +562,7 @@ export function DeliverableEditor() {
         ) : (
           <p role="alert">
             Editable draft unavailable. Published snapshots are locked;
-            held/cancelled projects cannot change.
+            held/cancelled or completed projects cannot change.
           </p>
         ))
       )}

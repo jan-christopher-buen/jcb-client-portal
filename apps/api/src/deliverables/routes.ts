@@ -61,9 +61,8 @@ export function deliverableRoutes(db: PrismaClient) {
     )
   })
   r.patch('/deliverables/:deliverableId', requireOwner(), async (req, res) => {
-    const { expectedRevision, ...input } = deliverableMetadataEditSchema.parse(
-      req.body,
-    )
+    const { expectedRevision, requiredChangeReason, ...input } =
+      deliverableMetadataEditSchema.parse(req.body)
     res.json(
       await editMetadata(
         db,
@@ -72,6 +71,7 @@ export function deliverableRoutes(db: PrismaClient) {
         req.user!,
         input,
         expectedRevision,
+        requiredChangeReason,
       ),
     )
   })

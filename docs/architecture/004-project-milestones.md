@@ -1,5 +1,7 @@
 # ADR-004: Project lifecycle and immutable milestone review rounds
 
+Later extension: [ADR-007](007-project-handover.md) adds guarded completion/reopening, auditable required flags and explicit change-request/draft resolution. Its rules supersede earlier deferred-completion descriptions below.
+
 Status: implemented for the final core local M2 slice. ADR-002's security controls and ADR-003's proposal/approval invariants remain in force. This supersedes their deferred project-status/milestone descriptions, without adding completion or handover.
 
 ## States and records

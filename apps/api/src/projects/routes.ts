@@ -66,7 +66,8 @@ export function projectRoutes(db: PrismaClient) {
     '/projects/:projectId/milestones/:milestoneId',
     requireOwner(),
     async (req, res) => {
-      const { expectedRevision, ...input } = milestoneEditSchema.parse(req.body)
+      const { expectedRevision, requiredChangeReason, ...input } =
+        milestoneEditSchema.parse(req.body)
       res.json(
         await editMilestone(
           db,
@@ -75,6 +76,7 @@ export function projectRoutes(db: PrismaClient) {
           req.user!,
           input,
           expectedRevision,
+          requiredChangeReason,
         ),
       )
     },

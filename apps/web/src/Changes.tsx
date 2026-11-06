@@ -139,7 +139,7 @@ export function ChangeList() {
   }
   const paused =
     resource.data?.project.status === 'ON_HOLD' ||
-    resource.data?.project.status === 'CANCELLED'
+    ['CANCELLED', 'COMPLETED'].includes(resource.data?.project.status ?? '')
   return (
     <>
       <Link to={`/organizations/${orgId}/projects/${projectId}`}>
@@ -155,7 +155,7 @@ export function ChangeList() {
             <p>
               Status: {label(resource.data.project.status)}.{' '}
               {paused &&
-                'Workflow changes are unavailable while this project is on hold or cancelled.'}
+                'Workflow changes are unavailable while this project is on hold, cancelled or completed.'}
             </p>
             <Agreement amounts={resource.data.amounts} base={base} />
             <section className={styles.panel}>
@@ -246,7 +246,9 @@ export function ChangeDetail() {
     r = data?.request,
     owner = user?.role === 'OWNER',
     paused =
-      data?.project.status === 'ON_HOLD' || data?.project.status === 'CANCELLED'
+      data?.project.status === 'ON_HOLD' ||
+      data?.project.status === 'CANCELLED' ||
+      data?.project.status === 'COMPLETED'
   const selected =
     r?.offers.find(
       (o) => o.id === (search.get('offer') ?? r.publishedOfferId),
@@ -254,7 +256,14 @@ export function ChangeDetail() {
   async function action(action: string) {
     if (!r || pending.current) return
     if (
-      ['publish', 'APPROVED', 'DECLINED', 'implement'].includes(action) &&
+      [
+        'publish',
+        'APPROVED',
+        'DECLINED',
+        'implement',
+        'close',
+        'abandon',
+      ].includes(action) &&
       !window.confirm(
         `${action === 'implement' ? 'Record implementation (not client acceptance)' : label(action)}${selected ? ` · offer v${selected.number}` : ''}?`,
       )
@@ -280,6 +289,18 @@ export function ChangeDetail() {
           expectedRevision: r.revision,
         })
         setBody('')
+      } else if (action === 'abandon' && selected) {
+        await api(`${path}/offers/${selected.id}/abandon`, 'POST', {
+          expectedRevision: selected.revision,
+          reason: note,
+        })
+        setNote('')
+      } else if (action === 'close') {
+        await api(`${path}/close`, 'POST', {
+          expectedRevision: r.revision,
+          reason: note,
+        })
+        setNote('')
       } else if (action === 'implement') {
         await api(`${path}/implement`, 'POST', {
           note,
@@ -328,7 +349,8 @@ export function ChangeDetail() {
             {paused && (
               <p className={styles.notice}>
                 Read access is available. Resume a held project before further
-                workflow changes; cancelled projects cannot resume.
+                workflow changes. Completed projects need an explicit reasoned
+                reopen; cancellation is terminal.
               </p>
             )}
             <section className={styles.panel}>
@@ -347,73 +369,77 @@ export function ChangeDetail() {
                   </li>
                 ))}
               </ol>
-              {!paused && (owner || r.state === 'NEEDS_CLARIFICATION') && (
-                <form
-                  onSubmit={(e) => {
-                    e.preventDefault()
-                    void action('message')
-                  }}
-                >
-                  <fieldset disabled={busy} className={styles.editorFields}>
-                    {owner && (
-                      <>
-                        <label htmlFor="message-kind">
-                          Discussion visibility/action
-                        </label>
-                        <select
-                          id="message-kind"
-                          value={kind}
-                          onChange={(e) => setKind(e.target.value)}
-                        >
-                          <option
-                            value="CLARIFICATION"
-                            disabled={
-                              ![
-                                'OPEN',
-                                'NEEDS_CLARIFICATION',
-                                'DECLINED',
-                              ].includes(r.state)
-                            }
+              {!paused &&
+                r.state !== 'CLOSED' &&
+                (owner || r.state === 'NEEDS_CLARIFICATION') && (
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault()
+                      void action('message')
+                    }}
+                  >
+                    <fieldset disabled={busy} className={styles.editorFields}>
+                      {owner && (
+                        <>
+                          <label htmlFor="message-kind">
+                            Discussion visibility/action
+                          </label>
+                          <select
+                            id="message-kind"
+                            value={kind}
+                            onChange={(e) => setKind(e.target.value)}
                           >
-                            Request client clarification
-                          </option>
-                          <option value="OWNER_NOTE">Owner-only note</option>
-                        </select>
-                      </>
-                    )}
-                    <label htmlFor="change-message">
-                      {owner
-                        ? 'Message or owner-only note'
-                        : 'Clarification response'}
-                    </label>
-                    <textarea
-                      id="change-message"
-                      required
-                      maxLength={4000}
-                      value={body}
-                      onChange={(e) => setBody(e.target.value)}
-                    />
-                    <button
-                      disabled={
-                        busy ||
-                        !body.trim() ||
-                        (owner &&
-                          kind === 'CLARIFICATION' &&
-                          !['OPEN', 'NEEDS_CLARIFICATION', 'DECLINED'].includes(
-                            r.state,
-                          ))
-                      }
-                    >
-                      Send{' '}
-                      {owner && kind === 'OWNER_NOTE'
-                        ? 'owner-only note'
-                        : owner
-                          ? 'clarification request'
-                          : 'response'}
-                    </button>
-                  </fieldset>
-                </form>
-              )}
+                            <option
+                              value="CLARIFICATION"
+                              disabled={
+                                ![
+                                  'OPEN',
+                                  'NEEDS_CLARIFICATION',
+                                  'DECLINED',
+                                ].includes(r.state)
+                              }
+                            >
+                              Request client clarification
+                            </option>
+                            <option value="OWNER_NOTE">Owner-only note</option>
+                          </select>
+                        </>
+                      )}
+                      <label htmlFor="change-message">
+                        {owner
+                          ? 'Message or owner-only note'
+                          : 'Clarification response'}
+                      </label>
+                      <textarea
+                        id="change-message"
+                        required
+                        maxLength={4000}
+                        value={body}
+                        onChange={(e) => setBody(e.target.value)}
+                      />
+                      <button
+                        disabled={
+                          busy ||
+                          !body.trim() ||
+                          (owner &&
+                            kind === 'CLARIFICATION' &&
+                            ![
+                              'OPEN',
+                              'NEEDS_CLARIFICATION',
+                              'DECLINED',
+                            ].includes(r.state))
+                        }
+                      >
+                        Send{' '}
+                        {owner && kind === 'OWNER_NOTE'
+                          ? 'owner-only note'
+                          : owner
+                            ? 'clarification request'
+                            : 'response'}
+                      </button>
+                    </fieldset>
+                  </form>
+                )}
             </section>
             <section className={styles.panel}>
               <h2>Offer history</h2>
@@ -474,7 +500,9 @@ export function ChangeDetail() {
                   {!paused &&
                     owner &&
                     selected.state === 'DRAFT' &&
-                    !['APPROVED', 'IMPLEMENTED'].includes(r.state) && (
+                    !['APPROVED', 'IMPLEMENTED', 'CLOSED'].includes(
+                      r.state,
+                    ) && (
                       <div className={styles.actions}>
                         <Link to={`${path}/offers/${selected.id}/edit`}>
                           Edit offer draft
@@ -514,13 +542,77 @@ export function ChangeDetail() {
               )}
               {owner &&
                 !paused &&
-                !['APPROVED', 'IMPLEMENTED'].includes(r.state) &&
+                !['APPROVED', 'IMPLEMENTED', 'CLOSED'].includes(r.state) &&
                 !r.offers.some((o) => o.state === 'DRAFT') && (
                   <button disabled={busy} onClick={() => void action('draft')}>
                     Create offer draft
                   </button>
                 )}
             </section>
+            {owner &&
+              !paused &&
+              r.state !== 'CLOSED' &&
+              selected?.state === 'DRAFT' && (
+                <section className={styles.panel}>
+                  <h2>Abandon unpublished draft</h2>
+                  <p>
+                    Unfinished offer drafts block completion, including drafts
+                    frozen by an earlier approval. Abandoning preserves their
+                    owner-only history.
+                  </p>
+                  <label htmlFor="abandon-offer-reason">
+                    Draft abandonment reason
+                  </label>
+                  <textarea
+                    id="abandon-offer-reason"
+                    maxLength={2000}
+                    value={note}
+                    onChange={(e) => setNote(e.target.value)}
+                    disabled={busy}
+                  />
+                  <button
+                    disabled={busy || !note.trim()}
+                    onClick={() => void action('abandon')}
+                  >
+                    Abandon offer draft
+                  </button>
+                </section>
+              )}
+            {owner &&
+              !paused &&
+              !['APPROVED', 'IMPLEMENTED', 'CLOSED'].includes(r.state) && (
+                <section className={styles.panel}>
+                  <h2>Close unresolved request</h2>
+                  <p>
+                    Explicitly abandon this request and any pending
+                    offers/drafts without changing agreed amounts. History
+                    remains readable.
+                  </p>
+                  <label htmlFor="close-change-reason">
+                    Closure reason (client-visible)
+                  </label>
+                  <textarea
+                    id="close-change-reason"
+                    value={note}
+                    maxLength={2000}
+                    onChange={(e) => setNote(e.target.value)}
+                    disabled={busy}
+                  />
+                  <button
+                    disabled={busy || !note.trim()}
+                    onClick={() => void action('close')}
+                  >
+                    Close change request
+                  </button>
+                </section>
+              )}
+            {r.state === 'CLOSED' && (
+              <p className={styles.notice}>
+                Explicitly closed. Retained drafts and offers cannot be
+                published or decided. See handover activity for the closure
+                reason.
+              </p>
+            )}
             {owner && !paused && r.state === 'APPROVED' && (
               <form
                 className={styles.panel}
@@ -584,8 +676,12 @@ export function ChangeOfferEditor() {
       ) : (
         resource.data &&
         (offer?.state === 'DRAFT' &&
-        !['APPROVED', 'IMPLEMENTED'].includes(resource.data.request.state) &&
-        !['ON_HOLD', 'CANCELLED'].includes(resource.data.project.status) ? (
+        !['APPROVED', 'IMPLEMENTED', 'CLOSED'].includes(
+          resource.data.request.state,
+        ) &&
+        !['ON_HOLD', 'CANCELLED', 'COMPLETED'].includes(
+          resource.data.project.status,
+        ) ? (
           <OfferForm
             key={offer.id}
             offer={offer}
@@ -595,7 +691,7 @@ export function ChangeOfferEditor() {
         ) : (
           <p role="alert">
             Editable offer unavailable. Published/approved offers are locked;
-            held/cancelled projects cannot change.
+            held/cancelled/completed projects cannot change.
           </p>
         ))
       )}

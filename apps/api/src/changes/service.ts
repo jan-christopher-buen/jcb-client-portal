@@ -16,6 +16,7 @@ import type {
 } from '../generated/prisma/client.js'
 import { lockedProject, assertProjectWritable } from '../projects/service.js'
 import { scopedOrganization } from '../proposals/service.js'
+import { handoverEvent } from '../handover/audit.js'
 import { HttpError, notFound } from '../errors.js'
 type Db = Prisma.TransactionClient
 type Actor = Express.User
@@ -30,7 +31,7 @@ function role(actor: Actor, required: 'OWNER' | 'CLIENT') {
     )
 }
 function editable(request: ChangeRequest) {
-  if (['APPROVED', 'IMPLEMENTED'].includes(request.state))
+  if (['APPROVED', 'IMPLEMENTED', 'CLOSED'].includes(request.state))
     throw conflict(
       'CHANGE_APPROVED',
       'Approved changes are locked. Create a separate change request for further scope changes.',
@@ -70,6 +71,11 @@ async function locked<T>(
   return lockedProject(db, org, pid, actor, async (tx, p) => {
     assertProjectWritable(p)
     const r = await requestIn(tx, p, rid)
+    if (r.state === 'CLOSED')
+      throw conflict(
+        'CHANGE_CLOSED',
+        'This change request was explicitly closed.',
+      )
     return run(tx, p, r)
   })
 }
@@ -163,6 +169,11 @@ export async function addMessage(
   role(actor, data.kind === 'RESPONSE' ? 'CLIENT' : 'OWNER')
   return locked(db, org, pid, rid, actor, async (tx, p, r) => {
     revision(r, data.expectedRevision)
+    if (r.state === 'CLOSED')
+      throw conflict(
+        'CHANGE_CLOSED',
+        'This change request was explicitly closed.',
+      )
     let state = r.state
     if (data.kind !== 'OWNER_NOTE') {
       editable(r)
@@ -387,7 +398,11 @@ export async function decideOffer(
   role(actor, 'CLIENT')
   return locked(db, org, pid, rid, actor, async (tx, p, r) => {
     const offer = await tx.changeOffer.findFirst({
-      where: { id: oid, requestId: rid, state: { not: 'DRAFT' } },
+      where: {
+        id: oid,
+        requestId: rid,
+        state: { notIn: ['DRAFT', 'ABANDONED'] },
+      },
       include: offerInclude,
     })
     if (!offer) throw notFound()
@@ -560,7 +575,10 @@ export async function readChange(
             include: { actor: identity },
           },
           offers: {
-            where: actor.role === 'OWNER' ? {} : { state: { not: 'DRAFT' } },
+            where:
+              actor.role === 'OWNER'
+                ? {}
+                : { state: { notIn: ['DRAFT', 'ABANDONED'] } },
             orderBy: { number: 'desc' },
             include: offerInclude,
           },
@@ -598,4 +616,71 @@ export async function readChange(
     },
     { isolationLevel: 'RepeatableRead' },
   )
+}
+
+export async function closeChange(
+  db: PrismaClient,
+  org: string,
+  pid: string,
+  rid: string,
+  actor: Actor,
+  expected: number,
+  reason: string,
+) {
+  role(actor, 'OWNER')
+  return locked(db, org, pid, rid, actor, async (tx, p, r) => {
+    revision(r, expected)
+    editable(r)
+    await tx.changeOffer.updateMany({
+      where: { requestId: rid, state: 'DRAFT' },
+      data: { state: 'ABANDONED' },
+    })
+    await tx.changeOffer.updateMany({
+      where: { requestId: rid, state: 'PUBLISHED' },
+      data: { state: 'SUPERSEDED' },
+    })
+    await tx.changeRequest.update({
+      where: { id: rid },
+      data: { state: 'CLOSED', revision: { increment: 1 } },
+    })
+    await handoverEvent(tx, p, actor, 'CHANGE_CLOSED', rid, reason, {
+      from: r.state,
+      to: 'CLOSED',
+    })
+    return { requestId: rid }
+  })
+}
+
+export async function abandonOffer(
+  db: PrismaClient,
+  org: string,
+  pid: string,
+  rid: string,
+  oid: string,
+  actor: Actor,
+  expected: number,
+  reason: string,
+) {
+  role(actor, 'OWNER')
+  return locked(db, org, pid, rid, actor, async (tx, p, _r) => {
+    const offer = await offerIn(tx, rid, oid)
+    revision(offer, expected)
+    if (offer.state !== 'DRAFT')
+      throw conflict(
+        'STALE_OFFER',
+        'Only an unpublished draft can be abandoned.',
+      )
+    await tx.changeOffer.update({
+      where: { id: oid },
+      data: { state: 'ABANDONED' },
+    })
+    await tx.changeRequest.update({
+      where: { id: rid },
+      data: { revision: { increment: 1 } },
+    })
+    await handoverEvent(tx, p, actor, 'CHANGE_CLOSED', rid, reason, {
+      action: 'Unpublished offer draft explicitly abandoned',
+    })
+    return { offerId: oid }
+  })
 }

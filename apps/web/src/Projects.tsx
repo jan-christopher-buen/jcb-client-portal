@@ -80,7 +80,9 @@ export function ProjectOverview() {
   const owner = user?.role === 'OWNER',
     data = resource.data
   const paused =
-    data?.project.status === 'ON_HOLD' || data?.project.status === 'CANCELLED'
+    data?.project.status === 'ON_HOLD' ||
+    data?.project.status === 'CANCELLED' ||
+    data?.project.status === 'COMPLETED'
   async function transition(value: string) {
     if (!data || !window.confirm(`Change project status: ${label(value)}?`))
       return
@@ -132,8 +134,8 @@ export function ProjectOverview() {
               >
                 <h2>Project status</h2>
                 <p>
-                  Completion will require a future handover gate and is
-                  unavailable.
+                  Completion requires the handover readiness gate and explicit
+                  owner confirmation.
                 </p>
                 <Failure error={action.error} reload={resource.reload} />
                 <label htmlFor="project-reason">
@@ -179,7 +181,9 @@ export function ProjectOverview() {
                       Resume project
                     </button>
                   )}
-                  {data.project.status !== 'CANCELLED' && (
+                  {!['CANCELLED', 'COMPLETED'].includes(
+                    data.project.status,
+                  ) && (
                     <button
                       disabled={action.busy || !reason.trim()}
                       onClick={() => void transition('CANCEL')}
@@ -190,6 +194,11 @@ export function ProjectOverview() {
                 </div>
               </section>
             )}
+            <p>
+              <Link to={`${base}/handover`}>
+                Handover and completion readiness
+              </Link>
+            </p>
             <section className={styles.panel}>
               <h2>Milestones</h2>
               {!data.milestones.length && <p>No milestones yet.</p>}
@@ -304,6 +313,7 @@ function MilestoneForm({
   const localAction = useAction(reload)
   const action = sharedAction ?? localAction
   const [validation, setValidation] = useState('')
+  const [requiredChangeReason, setRequiredChangeReason] = useState('')
   const prefix = milestone ? `edit-${milestone.id}` : 'new-milestone'
   async function submit(e: FormEvent) {
     e.preventDefault()
@@ -319,7 +329,9 @@ function MilestoneForm({
       `${base}/milestones${milestone ? `/${milestone.id}` : ''}`,
       {
         ...input.data,
-        ...(milestone ? { expectedRevision: milestone.revision } : {}),
+        ...(milestone
+          ? { expectedRevision: milestone.revision, requiredChangeReason }
+          : {}),
       },
       milestone ? 'PATCH' : 'POST',
     )
@@ -384,6 +396,20 @@ function MilestoneForm({
           />
           Required milestone
         </label>
+        {milestone && value.required !== milestone.required && (
+          <>
+            <label htmlFor={`${prefix}-required-reason`}>
+              Required-flag change reason
+            </label>
+            <textarea
+              id={`${prefix}-required-reason`}
+              required
+              maxLength={2000}
+              value={requiredChangeReason}
+              onChange={(e) => setRequiredChangeReason(e.target.value)}
+            />
+          </>
+        )}
         <button type="submit" className={styles.submit} disabled={action.busy}>
           {action.busy
             ? 'Saving…'
@@ -445,7 +471,9 @@ function MilestoneContent({
     [reason, setReason] = useState(''),
     [feedback, setFeedback] = useState('')
   const paused =
-    data.project.status === 'ON_HOLD' || data.project.status === 'CANCELLED'
+    data.project.status === 'ON_HOLD' ||
+    data.project.status === 'CANCELLED' ||
+    data.project.status === 'COMPLETED'
   const current = m.reviews.find((r) => r.id === m.currentReviewId)
   async function act(value: string) {
     if (window.confirm(`${label(value)} this milestone?`))
@@ -477,7 +505,7 @@ function MilestoneContent({
       <p>
         Next action:{' '}
         {paused
-          ? 'Project is on hold or cancelled. Workflow changes are unavailable.'
+          ? 'Project is on hold, cancelled or completed. Workflow changes are unavailable.'
           : nextAction(m, owner)}
       </p>
       <Failure error={action.error} reload={reload} />

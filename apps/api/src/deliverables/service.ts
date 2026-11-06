@@ -16,6 +16,7 @@ import type {
 } from '../generated/prisma/client.js'
 import { lockedProject, assertProjectWritable } from '../projects/service.js'
 import { scopedOrganization } from '../proposals/service.js'
+import { handoverEvent } from '../handover/audit.js'
 import { HttpError, notFound } from '../errors.js'
 type Db = Prisma.TransactionClient
 type Actor = Express.User
@@ -142,6 +143,7 @@ export async function editMetadata(
   actor: Actor,
   input: z.infer<typeof deliverableMetadataSchema>,
   expected: number,
+  requiredChangeReason = '',
 ) {
   role(actor, 'OWNER')
   const data = deliverableMetadataSchema.parse(input)
@@ -149,6 +151,22 @@ export async function editMetadata(
     revision(d, expected)
     if (d.required === data.required && d.position === data.position)
       return { deliverableId: did }
+    if (d.required !== data.required) {
+      if (!requiredChangeReason.trim())
+        throw conflict(
+          'REQUIRED_FLAG_REASON',
+          'Changing the required flag needs an explicit reason.',
+        )
+      await handoverEvent(
+        tx,
+        p,
+        actor,
+        'REQUIRED_FLAG_CHANGED',
+        did,
+        requiredChangeReason,
+        { resource: 'deliverable', before: d.required, after: data.required },
+      )
+    }
     await tx.deliverable.update({
       where: { id: did },
       data: { ...data, revision: { increment: 1 } },

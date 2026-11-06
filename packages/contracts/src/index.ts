@@ -169,6 +169,7 @@ export const projectStatuses = [
   'IN_REVIEW',
   'ON_HOLD',
   'CANCELLED',
+  'COMPLETED',
 ] as const
 export type ProjectStatus = (typeof projectStatuses)[number]
 export const revisionSchema = z.number().int().min(0).max(2147483646)
@@ -210,6 +211,7 @@ export const milestoneInputSchema = z
   })
   .strict()
 export const milestoneEditSchema = milestoneInputSchema.extend({
+  requiredChangeReason: z.string().trim().max(2000).default(''),
   expectedRevision: revisionSchema,
 })
 export const milestoneActionSchema = z
@@ -379,7 +381,8 @@ export type ChangeOfferDto = ChangeOfferInput & {
   id: string
   number: number
   revision: number
-  state: 'DRAFT' | 'PUBLISHED' | 'SUPERSEDED' | 'APPROVED' | 'DECLINED'
+  state:
+    'DRAFT' | 'PUBLISHED' | 'SUPERSEDED' | 'APPROVED' | 'DECLINED' | 'ABANDONED'
   publishedAt: string | null
   decision: DecisionReceipt | null
 }
@@ -395,6 +398,7 @@ export type ChangeRequestDto = ChangeRequestInput & {
     | 'APPROVED'
     | 'DECLINED'
     | 'IMPLEMENTED'
+    | 'CLOSED'
   creator: { id: string; name: string }
   createdAt: string
   publishedOfferId: string | null
@@ -541,6 +545,7 @@ export const deliverableEditSchema = deliverableContentSchema.extend({
   expectedRevision: revisionSchema,
 })
 export const deliverableMetadataEditSchema = deliverableMetadataSchema.extend({
+  requiredChangeReason: z.string().trim().max(2000).default(''),
   expectedRevision: revisionSchema,
 })
 export const deliverablePublishSchema = z
@@ -604,6 +609,96 @@ export type DeliverableListDto = {
 export type DeliverableDetailDto = {
   deliverable: DeliverableDto
   project: ChangeProject
+  page: number
+  hasMoreEvents: boolean
+}
+
+export const handoverItemSchema = z
+  .object({
+    title: nameSchema,
+    description: z.string().trim().min(1).max(4000),
+    required: z.boolean(),
+    clientVisible: z.boolean(),
+    position: z.number().int().min(1).max(100),
+  })
+  .strict()
+export const handoverEditSchema = handoverItemSchema.extend({
+  expectedRevision: revisionSchema,
+  reason: reasonSchema,
+})
+export const handoverCheckSchema = z
+  .object({
+    completed: z.boolean(),
+    expectedRevision: revisionSchema,
+    reason: reasonSchema,
+  })
+  .strict()
+export const completionSchema = z
+  .object({ confirm: z.literal(true), expectedRevision: revisionSchema })
+  .strict()
+export const reopenProjectSchema = z
+  .object({ reason: reasonSchema, expectedRevision: revisionSchema })
+  .strict()
+export const closeChangeSchema = reopenProjectSchema
+export type HandoverItemInput = z.infer<typeof handoverItemSchema>
+export type HandoverItemDto = HandoverItemInput & {
+  id: string
+  revision: number
+  completedAt: string | null
+  completer: { id: string; name: string } | null
+}
+export type CompletionBlocker = { code: string; message: string; path: string }
+export type CompletionSnapshot = {
+  milestones: {
+    id: string
+    title: string
+    required: boolean
+    status: string
+    reviewId: string | null
+    round: number | null
+  }[]
+  deliverables: {
+    id: string
+    title: string
+    required: boolean
+    versionId: string | null
+    number: number | null
+    decisionId: string | null
+    outcome: string | null
+  }[]
+  changes: {
+    id: string
+    title: string
+    state: string
+    offerId: string | null
+    implementationNote: string | null
+    implementedAt: string | null
+  }[]
+  checklist: HandoverItemDto[]
+}
+export type CompletionReadinessDto = {
+  project: { id: string; status: ProjectStatus; revision: number }
+  ready: boolean
+  blockers: CompletionBlocker[]
+}
+export type HandoverDto = CompletionReadinessDto & {
+  items: HandoverItemDto[]
+  completions: {
+    id: string
+    cycle: number
+    actor: { id: string; name: string }
+    completedAt: string
+    snapshot: CompletionSnapshot
+  }[]
+  events: {
+    id: string
+    kind: string
+    targetId: string
+    reason: string
+    details: Record<string, unknown>
+    actor: { id: string; name: string }
+    createdAt: string
+  }[]
   page: number
   hasMoreEvents: boolean
 }

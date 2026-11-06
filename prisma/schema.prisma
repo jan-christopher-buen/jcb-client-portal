@@ -17,6 +17,13 @@ enum Role {
   CLIENT
 }
 enum ActivityKind {
+  HANDOVER_CREATED
+  HANDOVER_EDITED
+  HANDOVER_CHECKED
+  REQUIRED_FLAG_CHANGED
+  CHANGE_CLOSED
+  PROJECT_COMPLETED
+  PROJECT_REOPENED
   INVITATION_CREATED
   INVITATION_REVOKED
   INVITATION_ACCEPTED
@@ -58,6 +65,9 @@ model User {
   role Role @default(CLIENT)
   disabledAt DateTime? @map("disabled_at") @db.Timestamptz(6)
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  handoverCompleted HandoverItem[]
+  handoverEvents HandoverEvent[]
+  completions ProjectCompletion[]
   memberships Membership[]
   invitations Invitation[]
   activities ActivityEvent[]
@@ -162,6 +172,7 @@ enum DecisionOutcome {
  DECLINED
 }
 enum ProjectStatus {
+ COMPLETED
  PLANNED
  ACTIVE
  IN_REVIEW
@@ -243,6 +254,10 @@ model Project {
  status ProjectStatus @default(PLANNED)
  resumeStatus ProjectStatus? @map("resume_status")
  lockRevision Int @default(0) @map("lock_revision")
+ handoverItems HandoverItem[]
+ handoverEvents HandoverEvent[]
+ completions ProjectCompletion[]
+ completedAt DateTime? @map("completed_at") @db.Timestamptz(6)
  milestones Milestone[]
  workflowEvents WorkflowEvent[]
  deliverables Deliverable[]
@@ -323,6 +338,7 @@ model WorkflowEvent {
 }
 
 enum ChangeState {
+ CLOSED
  OPEN
  NEEDS_CLARIFICATION
  OFFERED
@@ -331,6 +347,7 @@ enum ChangeState {
  IMPLEMENTED
 }
 enum ChangeOfferState {
+ ABANDONED
  DRAFT
  PUBLISHED
  SUPERSEDED
@@ -490,4 +507,55 @@ model DeliverableEvent {
  @@index([projectId, createdAt, id])
  @@index([actorId])
  @@map("deliverable_events")
+}
+
+model HandoverItem {
+ id String @id @default(uuid()) @db.Uuid
+ projectId String @map("project_id") @db.Uuid
+ organizationId String @map("organization_id") @db.Uuid
+ project Project @relation(fields: [projectId, organizationId], references: [id, organizationId], onDelete: Restrict, onUpdate: NoAction)
+ title String
+ description String
+ required Boolean @default(true)
+ clientVisible Boolean @default(true) @map("client_visible")
+ position Int
+ revision Int @default(0)
+ completedAt DateTime? @map("completed_at") @db.Timestamptz(6)
+ completedBy String? @map("completed_by") @db.Uuid
+ completer User? @relation(fields: [completedBy], references: [id], onDelete: Restrict)
+ @@unique([projectId, position])
+ @@unique([id, projectId, organizationId])
+ @@index([completedBy])
+ @@map("handover_items")
+}
+model ProjectCompletion {
+ id String @id @default(uuid()) @db.Uuid
+ projectId String @map("project_id") @db.Uuid
+ organizationId String @map("organization_id") @db.Uuid
+ project Project @relation(fields: [projectId, organizationId], references: [id, organizationId], onDelete: Restrict, onUpdate: NoAction)
+ cycle Int
+ actorId String @map("actor_id") @db.Uuid
+ actor User @relation(fields: [actorId], references: [id], onDelete: Restrict)
+ completedAt DateTime @map("completed_at") @db.Timestamptz(6)
+ snapshot Json @db.JsonB
+ @@unique([projectId, cycle])
+ @@index([actorId])
+ @@map("project_completions")
+}
+model HandoverEvent {
+ id String @id @default(uuid()) @db.Uuid
+ projectId String @map("project_id") @db.Uuid
+ organizationId String @map("organization_id") @db.Uuid
+ project Project @relation(fields: [projectId, organizationId], references: [id, organizationId], onDelete: Restrict, onUpdate: NoAction)
+ actorId String @map("actor_id") @db.Uuid
+ actor User @relation(fields: [actorId], references: [id], onDelete: Restrict)
+ kind ActivityKind
+ targetId String @map("target_id") @db.Uuid
+ reason String @default("")
+ clientVisible Boolean @default(true) @map("client_visible")
+ details Json @db.JsonB
+ createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+ @@index([projectId, createdAt, id])
+ @@index([actorId])
+ @@map("handover_events")
 }

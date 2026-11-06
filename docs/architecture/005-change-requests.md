@@ -1,5 +1,7 @@
 # ADR-005: Versioned change offers and agreed-scope adjustments
 
+Later extension: [ADR-007](007-project-handover.md) adds guarded completion/reopening, auditable required flags and explicit change-request/draft resolution. Its rules supersede earlier deferred-completion descriptions below.
+
 Status: implemented for the first local M3 slice. Existing authentication, proposal snapshots, project/milestone states and release gates remain in force. This adds no files, billing, completion or deployment.
 
 ## Records and lifecycle
