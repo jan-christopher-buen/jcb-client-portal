@@ -1,6 +1,6 @@
 # ADR-003: Immutable proposal versions and atomic approvals
 
-Status: implemented for the next M2 local slice. Authentication and invitation decisions in ADR-002 remain in force. No milestone, billing, file, AI or deployment scope is added.
+Status: implemented for the proposal M2 slice. Project lifecycle and milestones now extend this in [ADR-004](004-project-milestones.md); proposal invariants remain in force. Authentication and invitation decisions in ADR-002 remain in force. No milestone, billing, file, AI or deployment scope is added.
 
 ## Records and boundaries
 

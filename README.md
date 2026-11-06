@@ -1,18 +1,18 @@
 # jcb client portal
 
-A client portal for freelance web development and SEO engagements, bringing client organizations and invitation-only access into a shared workspace. Versioned proposals, client decisions, and planned projects build on that access foundation. Milestone and handover workflows remain planned for later slices.
+A client portal for freelance web development and SEO engagements, bringing client organizations and invitation-only access into a shared workspace. Versioned proposals, project status, and milestone review rounds build on that access foundation. Handover and project completion remain future work.
 
-**Current scope: M2 authentication, proposals, and planned projects in local development.** Owners can manage organizations and business contacts, issue invitations, and revoke client memberships. Invited clients can create an account or sign in with an existing account and access only their active organizations. Owners can draft and publish versioned PHP proposals; active clients can approve or decline, with approvals atomically creating one planned project. This is not the complete portal or a production release.
+**Current scope: core M2 access, proposals, project lifecycle, and milestone reviews in local development.** Owners can manage organizations and business contacts, issue invitations, and revoke client memberships. Invited clients can create an account or sign in with an existing account and access only their active organizations. Owners can draft and publish versioned PHP proposals; active clients can approve or decline, with approvals atomically creating one planned project. Owners can activate/hold/resume/cancel projects and submit text-only milestones; clients can request changes or accept numbered review rounds. This is not the complete portal or a production release.
 
 ## Stack and architecture
 
 React + strict TypeScript + Vite + React Router + CSS modules; Node 24 + Express; PostgreSQL + Prisma 7; Passport local + Argon2id; PostgreSQL-backed sessions; Zod validation; Nodemailer SMTP to a local mail sink.
 
-- `apps/web`: sign-in, invitation onboarding, owner/client organization, proposal editor/review, and approved-scope project screens
-- `apps/api`: authentication, scoped organization resources, invitation and proposal decision transactions
+- `apps/web`: sign-in, invitation onboarding, owner/client organization, proposal editor/review, project lifecycle, and milestone review screens
+- `apps/api`: authentication, scoped organization resources, invitation, proposal and milestone review transactions
 - `packages/contracts`: shared input schemas and DTOs; no browser ORM models
 - `prisma`: additive migrations and session/business constraints
-- `docs`: [authentication architecture](docs/architecture/002-authentication-and-invitations.md), [proposal architecture](docs/architecture/003-proposal-approval.md), and [implemented proposal slice](docs/product/proposal-slice.md)
+- `docs`: [authentication architecture](docs/architecture/002-authentication-and-invitations.md), [proposal architecture](docs/architecture/003-proposal-approval.md), [project/milestone architecture](docs/architecture/004-project-milestones.md), and [implemented milestone slice](docs/product/milestone-slice.md)
 
 Production builds serve browser assets and `/api` from one Express origin. Development uses the Vite API proxy. Lowercase `jcb.` branding uses system font fallbacks until licensed local font files are available.
 
@@ -85,7 +85,9 @@ Sent snapshots and their ordered items are immutable. Creating a revision draft 
 
 Active client members may approve or decline the current sent version. The owner cannot act for the client. Approval records the real actor/version/time, creates exactly one planned project, and appends history in one transaction. Decline creates no project. Identical retries return the original result; conflicting or stale decisions return a clear conflict. Approved proposals are locked. If approval wins while a revision draft exists, that draft stays private and cannot be edited/published.
 
-Projects display the actual approved scope and cost breakdown, with status **planned**. There are no milestone actions or progress metrics yet. Approval is a recorded workflow decision, not a claimed legally binding electronic-signature service.
+Projects start **planned** and display the actual approved scope and cost breakdown. Owners can move Planned → Active → In review; hold/cancellation require a reason. Resume restores the pre-hold state, while cancellation is terminal. Completion is unavailable until a future handover gate exists. Approval is a recorded workflow decision, not a claimed legally binding electronic-signature service.
+
+Milestones move Planned → In progress → In review → Accepted. Requesting changes requires feedback and returns work to In progress. Every submission creates an immutable numbered text snapshot. Withdrawal/reopening require reasons and retain earlier rounds and acceptance. Held/cancelled projects reject workflow writes. Progress counts accepted required milestones; no required milestones displays “No required milestones yet”. Due dates use Asia/Manila, with overdue starting the following day and excluding accepted milestones/cancelled projects. Workflow history records real actors and UTC timestamps.
 
 For an existing local checkout, apply the additive migration without resetting data:
 
@@ -108,7 +110,7 @@ npm run test:integration
 npm run build
 ```
 
-Integration tests use the dedicated `TEST_DATABASE_URL`, apply additive migrations, and clean up only their generated fixtures. They reject remote hosts, development database names, and matching development/test names. They do not reset a database. Integration files run sequentially to respect the single-owner constraint; proposal race tests use separate database pools and deliberately overlapping requests. Generated failure triggers verify transaction rollback and retry exhaustion. The suite starts an ephemeral local SMTP sink. Keep the test database reserved for automated checks; it must not contain a manually provisioned owner.
+Integration tests use the dedicated `TEST_DATABASE_URL`, apply additive migrations, and clean up only their generated fixtures. They reject remote hosts, development database names, and matching development/test names. They do not reset a database. Integration files run sequentially to respect the single-owner constraint; proposal race tests use separate database pools and deliberately overlapping requests. Generated failure triggers verify transaction rollback and retry exhaustion. Workflow races cover client decisions versus withdrawal/reopening/hold/cancellation and membership revocation while waiting. The suite starts an ephemeral local SMTP sink. Keep the test database reserved for automated checks; it must not contain a manually provisioned owner.
 
 Other commands: `npm run format` applies formatting; `npm run db:migrate` deploys checked-in migrations to the local development database; `npm start` serves the compiled app and API after `npm run build`. For a local single-origin check, use `APP_ORIGIN=http://localhost:3000` and stop Vite/API development servers first.
 
@@ -116,6 +118,6 @@ GitHub Actions supplies PostgreSQL and runs formatting, lint, types, smoke/integ
 
 ## Limitations
 
-Milestones, project status transitions, change requests, billing, uploads, AI, external email delivery, password recovery, MFA, and public signup are not implemented. Owner detail sections show up to 100 records; organization lists have 20-row pages. SMTP delivery has no durable outbox or automatic retry; a crash can require reissuing an invitation. Login limits are shared by users behind the same IP. Proposal editor warnings cover links/page unload; browser-history navigation does not prompt before leaving unsaved input.
+Project completion/handover, change requests, billing, uploads, AI, external email delivery, password recovery, MFA, and public signup are not implemented. Owner detail sections show up to 100 records; organization lists have 20-row pages. Projects support 100 milestones and 100 rounds per milestone, unique display-order slots 1–100, and 50 workflow events per page. There is no milestone deletion or order-slot swapping. Due-state displays refresh on reload. SMTP delivery has no durable outbox or automatic retry; a crash can require reissuing an invitation. Login limits are shared by users behind the same IP. Proposal-editor guards cover in-app links/navigation and Back/Forward; supported browsers warn on refresh/tab close. Forced browser exits, crashes, mobile termination and session expiry cannot be guaranteed to preserve unsaved memory.
 
 Production invitation delivery is disabled. Hosting, budget, HTTPS and exact proxy trust, backup/restore, retention, and production abuse controls remain deployment gates. No staging deployment or public demo is available, and no production readiness is claimed.

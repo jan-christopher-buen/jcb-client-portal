@@ -17,3 +17,5 @@ Approval retries return the original result. Conflicting or stale decisions expl
 Organization pages link to real paginated proposal/project lists. Empty, loading and retry states are present; no fabricated dashboard metrics or milestones are shown. The editor, review history, receipts and planned-project overview preserve lowercase jcb. branding, system font fallbacks, keyboard focus/skip navigation, and horizontally scrollable cost tables on mobile. Decision times display Asia/Manila; storage/receipts use UTC timestamps.
 
 Boundaries: PHP only; 1–100 items; positive bounded integer quantities; bounded whole-centavo prices/totals; 100 versions maximum. No taxes, discounts, partial quantities, milestone progress, billing, uploads, AI, production email or deployment is included. See [ADR-003](../architecture/003-proposal-approval.md) for exact bounds and transaction rules. The earlier authentication slice remains implemented; the full M2 milestone is not claimed complete.
+
+Project lifecycle, milestone progress and navigation protection are now implemented in the [milestone slice](milestone-slice.md), superseding the earlier deferred descriptions above.
