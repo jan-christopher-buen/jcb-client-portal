@@ -1,150 +1,209 @@
 import { useEffect, useState } from 'react'
-import { apiErrorSchema } from '@jcb/contracts'
+import { Link, Navigate, Route, Routes, useNavigate } from 'react-router'
+import type { Identity } from '@jcb/contracts'
+import { api, ApiFailure, errorMessage } from './api.js'
+import { Session } from './session.js'
+import { SignIn, Invitation } from './Authentication.js'
+import { Organizations, Organization } from './Organizations.js'
 import styles from './App.module.css'
-type Status = 'loading' | 'signed-out' | 'error'
+function consumeToken() {
+  const token = new URLSearchParams(window.location.hash.slice(1)).get('token')
+  if (window.location.hash)
+    window.history.replaceState(null, '', window.location.pathname)
+  return token
+}
+const initialToken = consumeToken()
 export function App() {
-  const [status, setStatus] = useState<Status>('loading')
+  const [user, setUser] = useState<Identity | null>(null)
+  const [token, setToken] = useState(initialToken)
+  const [ready, setReady] = useState(false)
+  const [error, setError] = useState('')
   const [attempt, setAttempt] = useState(0)
+  const navigate = useNavigate()
   useEffect(() => {
-    const controller = new AbortController()
-    fetch('/api/auth/me', {
-      signal: AbortSignal.any([controller.signal, AbortSignal.timeout(8000)]),
-    })
-      .then(async (response) => {
-        const body: unknown = await response.json()
-        if (response.status !== 401 || !apiErrorSchema.safeParse(body).success)
-          throw new Error('Unexpected session response')
-        setStatus('signed-out')
+    let live = true
+    api<{ user: Identity }>('/auth/me')
+      .then((data) => {
+        if (live) {
+          setUser(data.user)
+          setReady(true)
+          setError('')
+        }
       })
-      .catch(() => {
-        if (!controller.signal.aborted) setStatus('error')
+      .catch((error) => {
+        if (!live) return
+        if (error instanceof ApiFailure && error.status === 401) {
+          setUser(null)
+          setReady(true)
+          setError('')
+        } else setError(errorMessage(error))
       })
-    return () => controller.abort()
+    return () => {
+      live = false
+    }
   }, [attempt])
+  useEffect(() => {
+    const capture = () => setToken(consumeToken())
+    window.addEventListener('hashchange', capture)
+    return () => window.removeEventListener('hashchange', capture)
+  }, [])
+  useEffect(() => {
+    const ended = () => {
+      setUser(null)
+      navigate(token ? '/invitation' : '/sign-in')
+    }
+    window.addEventListener('jcb:session-ended', ended)
+    return () => window.removeEventListener('jcb:session-ended', ended)
+  }, [navigate, token])
+  async function logout() {
+    try {
+      await api('/auth/logout', 'POST')
+      setUser(null)
+      setError('')
+      navigate(token ? '/invitation' : '/sign-in')
+    } catch (error) {
+      setError(errorMessage(error))
+    }
+  }
   return (
-    <div className={styles.layout}>
-      <a className={styles.skip} href="#main">
-        Skip to content
-      </a>
-      <aside className={styles.sidebar} aria-label="Application shell">
-        <a
-          className={styles.brand}
-          href="/sign-in"
-          aria-label="jcb client portal home"
-        >
-          jcb<span>.</span>
+    <Session value={{ user, setUser, token, setToken }}>
+      <div className={styles.layout}>
+        <a className={styles.skip} href="#main">
+          Skip to content
         </a>
-        <p className={styles.product}>client portal</p>
-        <div className={styles.workspace}>
-          <span className={styles.marker} aria-hidden="true">
-            j
-          </span>
-          <div>
-            Project workspace<small>Local foundation</small>
-          </div>
-        </div>
-        <nav aria-label="Portal navigation">
-          <a className={styles.active} href="/sign-in" aria-current="page">
-            <span aria-hidden="true">↗</span> Sign in
-          </a>
-        </nav>
-        <p className={styles.sidebarNote}>
-          A clearer place for
-          <br />
-          your next project.
-        </p>
-        <div className={styles.sidebarFooter}>jcb · web development & SEO</div>
-      </aside>
-      <div className={styles.content}>
-        <header className={styles.topbar}>
-          <span>
-            Workspace <span aria-hidden="true">/</span> <strong>Sign in</strong>
-          </span>
-          <span className={styles.badge}>M1 · Local preview</span>
-        </header>
-        <main id="main" className={styles.main} tabIndex={-1}>
-          <div className={styles.intro}>
-            <p className={styles.eyebrow}>YOUR PROJECT, IN ONE PLACE</p>
-            <h1>
-              Good work starts
-              <br />
-              with clarity.
-            </h1>
-            <p>
-              A shared space for project scope, decisions,
-              <br className={styles.desktopBreak} /> and the next steps ahead.
-            </p>
-            <div className={styles.divider} />
-            <p className={styles.caption}>
-              Built for thoughtful collaboration.
-              <br />
-              One milestone at a time.
-            </p>
-          </div>
-          <section className={styles.card} aria-labelledby="sign-in-title">
-            <span className={styles.step}>01 / ACCESS YOUR WORKSPACE</span>
-            <h2 id="sign-in-title">Welcome back.</h2>
-            <p className={styles.description}>
-              Your client workspace begins here.
-            </p>
-            <div className={styles.notice}>
-              <strong>Authentication is coming in M2.</strong>
-              <p>
-                This local preview shows the sign-in layout. Accounts,
-                invitations, and protected workspaces are not available yet.
-              </p>
+        <aside className={styles.sidebar} aria-label="Application shell">
+          <Link
+            className={styles.brand}
+            to="/"
+            aria-label="jcb client portal home"
+          >
+            jcb<span>.</span>
+          </Link>
+          <p className={styles.product}>client portal</p>
+          <div className={styles.workspace}>
+            <span className={styles.marker} aria-hidden="true">
+              j
+            </span>
+            <div>
+              {user?.name ?? 'Client workspace'}
+              <small>
+                {user
+                  ? user.role === 'OWNER'
+                    ? 'Owner'
+                    : 'Client'
+                  : 'Invitation-only access'}
+              </small>
             </div>
-            <form
-              onSubmit={(event) => event.preventDefault()}
-              aria-describedby="form-note"
+          </div>
+          <nav aria-label="Portal navigation">
+            <Link
+              className={styles.active}
+              to={user ? '/organizations' : '/sign-in'}
             >
-              <label htmlFor="email">Email address</label>
-              <input
-                id="email"
-                type="email"
-                autoComplete="username"
-                placeholder="you@company.com"
-                disabled
-              />
-              <label htmlFor="password">Password</label>
-              <input
-                id="password"
-                type="password"
-                autoComplete="current-password"
-                placeholder="Enter your password"
-                disabled
-              />
-              <button className={styles.submit} disabled>
-                Sign in <span aria-hidden="true">↗</span>
+              {user ? 'Organizations' : 'Sign in'}
+            </Link>
+            {token && (
+              <Link className={styles.navLink} to="/invitation">
+                Your invitation
+              </Link>
+            )}
+          </nav>
+          <p className={styles.sidebarNote}>
+            A clearer place for
+            <br />
+            your next project.
+          </p>
+          <div className={styles.sidebarFooter}>
+            jcb · web development & SEO
+          </div>
+        </aside>
+        <div className={styles.content}>
+          <header className={styles.topbar}>
+            <span>
+              Workspace <span aria-hidden="true">/</span>{' '}
+              <strong>
+                {user ? 'Client organizations' : 'Account access'}
+              </strong>
+            </span>
+            {user && (
+              <button
+                className={styles.secondary}
+                onClick={() => void logout()}
+              >
+                Sign out
               </button>
-              <p id="form-note" className={styles.formNote}>
-                Sign in is disabled in this foundation preview.
-              </p>
-            </form>
-            <div className={styles.connection} role="status" aria-live="polite">
-              {status === 'loading'
-                ? 'Checking API connection…'
-                : status === 'signed-out'
-                  ? 'API connected · Signed out'
-                  : 'API unavailable. Check that the local server is running.'}
-              {status === 'error' && (
-                <button
-                  onClick={() => {
-                    setStatus('loading')
-                    setAttempt((value) => value + 1)
-                  }}
-                >
+            )}
+          </header>
+          <main id="main" className={styles.workMain} tabIndex={-1}>
+            {error && (
+              <div className={styles.error} role="alert">
+                {error}{' '}
+                <button onClick={() => setAttempt((v) => v + 1)}>
                   Retry connection
                 </button>
-              )}
-            </div>
-          </section>
-        </main>
-        <footer className={styles.footer}>
-          <span>jcb client portal</span>
-          <span>Clear scope. Shared progress.</span>
-        </footer>
+              </div>
+            )}
+            {!ready ? (
+              <p role="status">Checking your session…</p>
+            ) : (
+              <Routes>
+                <Route
+                  path="/"
+                  element={
+                    <Navigate
+                      to={user ? '/organizations' : '/sign-in'}
+                      replace
+                    />
+                  }
+                />
+                <Route
+                  path="/sign-in"
+                  element={
+                    user ? (
+                      <Navigate
+                        to={token ? '/invitation' : '/organizations'}
+                        replace
+                      />
+                    ) : (
+                      <SignIn />
+                    )
+                  }
+                />
+                <Route path="/invitation" element={<Invitation />} />
+                <Route
+                  path="/organizations"
+                  element={
+                    user ? (
+                      <Organizations />
+                    ) : (
+                      <Navigate to="/sign-in" replace />
+                    )
+                  }
+                />
+                <Route
+                  path="/organizations/:id"
+                  element={
+                    user ? <Organization /> : <Navigate to="/sign-in" replace />
+                  }
+                />
+                <Route
+                  path="*"
+                  element={
+                    <section>
+                      <h1>Page unavailable</h1>
+                      <Link to="/">Return to workspace</Link>
+                    </section>
+                  }
+                />
+              </Routes>
+            )}
+          </main>
+          <footer className={styles.footer}>
+            <span>jcb client portal</span>
+            <span>Clear scope. Shared progress.</span>
+          </footer>
+        </div>
       </div>
-    </div>
+    </Session>
   )
 }
