@@ -1,5 +1,7 @@
 # M2 local integration checkpoint
 
+Historical local checkpoint. The M1–M2 branch was subsequently merged into `main`; current scope also includes [the first M3 change-request slice](change-request-slice.md). This record does not claim a CI result for later branches.
+
 The implemented local workflow now connects explicit owner provisioning → invitation/local delivery → client onboarding/sign-in → immutable PHP proposal publication → client approval/one project → milestone submission → requested changes → numbered resubmission → client acceptance. Hold/resume, cancellation and reopening preserve history. Authentication, current organization membership, CSRF/Origin and client-only decisions remain server-enforced.
 
 This checkpoint reviews the combined M1–M2 implementation, not a production release. GitHub's actual default branch is `main`; the implementation remains on `feat/project-milestones`. No push, PR publication, merge, staging deployment or remote CI verification is included.
