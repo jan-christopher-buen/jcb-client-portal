@@ -467,3 +467,5 @@ export async function readWorkflow(
     { isolationLevel: 'RepeatableRead' },
   )
 }
+
+export { locked as lockedProject, writable as assertProjectWritable }

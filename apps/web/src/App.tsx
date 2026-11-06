@@ -8,6 +8,7 @@ import { Organizations, Organization } from './Organizations.js'
 import styles from './App.module.css'
 import { ProposalList, ProposalDetail } from './Proposals.js'
 import { ProjectOverview, MilestoneReview } from './Projects.js'
+import { ChangeList, ChangeDetail, ChangeOfferEditor } from './Changes.js'
 import { ProposalEditor } from './ProposalEditor.js'
 function consumeToken() {
   const token = new URLSearchParams(window.location.hash.slice(1)).get('token')
@@ -220,6 +221,28 @@ export function App() {
                   element={
                     user?.role === 'OWNER' ? (
                       <ProposalEditor />
+                    ) : (
+                      <Navigate to="/" replace />
+                    )
+                  }
+                />
+                <Route
+                  path="/organizations/:orgId/projects/:projectId/changes"
+                  element={
+                    user ? <ChangeList /> : <Navigate to="/sign-in" replace />
+                  }
+                />
+                <Route
+                  path="/organizations/:orgId/projects/:projectId/changes/:requestId"
+                  element={
+                    user ? <ChangeDetail /> : <Navigate to="/sign-in" replace />
+                  }
+                />
+                <Route
+                  path="/organizations/:orgId/projects/:projectId/changes/:requestId/offers/:offerId/edit"
+                  element={
+                    user?.role === 'OWNER' ? (
+                      <ChangeOfferEditor />
                     ) : (
                       <Navigate to="/" replace />
                     )

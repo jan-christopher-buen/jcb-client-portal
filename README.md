@@ -1,18 +1,18 @@
 # jcb client portal
 
-A client portal for freelance web development and SEO engagements, bringing client organizations and invitation-only access into a shared workspace. Versioned proposals, project status, and milestone review rounds build on that access foundation. Handover and project completion remain future work.
+A client portal for freelance web development and SEO engagements, bringing client organizations and invitation-only access into a shared workspace. Versioned proposals, project status, and milestone review rounds build on that access foundation. Versioned change offers record client-approved scope adjustments. Files, handover and project completion remain future work.
 
-**Current scope: core M2 access, proposals, project lifecycle, and milestone reviews in local development.** Owners can manage organizations and business contacts, issue invitations, and revoke client memberships. Invited clients can create an account or sign in with an existing account and access only their active organizations. Owners can draft and publish versioned PHP proposals; active clients can approve or decline, with approvals atomically creating one planned project. Owners can activate/hold/resume/cancel projects and submit text-only milestones; clients can request changes or accept numbered review rounds. This is not the complete portal or a production release.
+**Current scope: M1–M2 core workflows and the first local M3 change-request slice.** Owners can manage organizations and business contacts, issue invitations, and revoke client memberships. Invited clients can create an account or sign in with an existing account and access only their active organizations. Owners can draft and publish versioned PHP proposals; active clients can approve or decline, with approvals atomically creating one planned project. Owners can activate/hold/resume/cancel projects and submit text-only milestones; clients can request changes or accept numbered review rounds. Clients can request scope changes; owners clarify/publish offers and record implementation after client approval. This is not the complete portal or a production release.
 
 ## Stack and architecture
 
 React + strict TypeScript + Vite + React Router + CSS modules; Node 24 + Express; PostgreSQL + Prisma 7; Passport local + Argon2id; PostgreSQL-backed sessions; Zod validation; Nodemailer SMTP to a local mail sink.
 
-- `apps/web`: sign-in, invitation onboarding, owner/client organization, proposal editor/review, project lifecycle, and milestone review screens
-- `apps/api`: authentication, scoped organization resources, invitation, proposal and milestone review transactions
+- `apps/web`: sign-in, invitation onboarding, owner/client organization, proposal editor/review, project lifecycle, milestone review, and versioned change-request screens
+- `apps/api`: authentication, scoped organization resources, invitation, proposal, milestone review and change-approval transactions
 - `packages/contracts`: shared input schemas and DTOs; no browser ORM models
 - `prisma`: additive migrations and session/business constraints
-- `docs`: [authentication architecture](docs/architecture/002-authentication-and-invitations.md), [proposal architecture](docs/architecture/003-proposal-approval.md), [project/milestone architecture](docs/architecture/004-project-milestones.md), and [implemented milestone slice](docs/product/milestone-slice.md)
+- `docs`: [authentication architecture](docs/architecture/002-authentication-and-invitations.md), [proposal architecture](docs/architecture/003-proposal-approval.md), [project/milestone architecture](docs/architecture/004-project-milestones.md), [change-request architecture](docs/architecture/005-change-requests.md), and [implemented change-request slice](docs/product/change-request-slice.md)
 
 Production builds serve browser assets and `/api` from one Express origin. Development uses the Vite API proxy. Lowercase `jcb.` branding uses system font fallbacks until licensed local font files are available.
 
@@ -89,7 +89,9 @@ Projects start **planned** and display the actual approved scope and cost breakd
 
 Milestones move Planned → In progress → In review → Accepted. Requesting changes requires feedback and returns work to In progress. Every submission creates an immutable numbered text snapshot. Withdrawal/reopening require reasons and retain earlier rounds and acceptance. Held/cancelled projects reject workflow writes. Progress counts accepted required milestones; no required milestones displays “No required milestones yet”. Due dates use Asia/Manila, with overdue starting the following day and excluding accepted milestones/cancelled projects. Workflow history records real actors and UTC timestamps.
 
-For an existing local checkout, apply the additive migration without resetting data:
+Scope changes preserve the approved proposal. Active clients create requests and respond to clarification; owners keep private notes and publish immutable numbered offers. Clients approve/decline only the current offer. Original amount, approved adjustments and revised agreed amount display separately, using exact signed centavos. Approval is coordinated across requests on the same project and cannot make the revised amount negative or exceed the supported maximum. Implementation is an owner record with a note, not client acceptance or project completion. Schedule impact is descriptive; approval never shifts milestone dates.
+
+For an existing local checkout, apply the additive migrations without resetting data:
 
 ```bash
 nvm use
@@ -124,6 +126,6 @@ Database commands require plain loopback URLs with the exact development/test da
 
 ## Limitations
 
-Project completion/handover, change requests, billing, uploads, AI, external email delivery, password recovery, MFA, and public signup are not implemented. Owner detail sections show up to 100 records; organization lists have 20-row pages. Projects support 100 milestones and 100 rounds per milestone, unique display-order slots 1–100, and 50 workflow events per page. There is no milestone deletion or order-slot swapping. Due-state displays refresh on reload. SMTP delivery has no durable outbox or automatic retry; a crash can require reissuing an invitation. Login limits are shared by users behind the same IP. Proposal-editor guards cover in-app links/navigation and Back/Forward; supported browsers warn on refresh/tab close. Forced browser exits, crashes, mobile termination and session expiry cannot be guaranteed to preserve unsaved memory.
+Project completion/handover, billing/payment collection, uploads, AI, external email delivery, password recovery, MFA, and public signup are not implemented. Owner detail sections show up to 100 records; organization lists have 20-row pages. Projects support 100 milestones and 100 rounds per milestone, unique display-order slots 1–100, and 50 workflow events per page. There is no milestone deletion or order-slot swapping. Due-state displays refresh on reload. Change requests are capped at 100 per project, with 100 offer versions and 100 discussion entries each; lists use 20-row pages. Signed adjustments are bounded to ±100,000,000,000,000,000 centavos; revised agreements must remain 0–100,000,000,000,000,000 centavos. There are no automatic schedule changes. SMTP delivery has no durable outbox or automatic retry; a crash can require reissuing an invitation. Login limits are shared by users behind the same IP. Proposal/offer editor guards cover in-app links/navigation and Back/Forward; supported browsers warn on refresh/tab close. Forced browser exits, crashes, mobile termination and session expiry cannot be guaranteed to preserve unsaved memory.
 
 Production invitation delivery is disabled. Hosting, budget, HTTPS and exact proxy trust, backup/restore, retention, and production abuse controls remain deployment gates. No staging deployment or public demo is available, and no production readiness is claimed.
