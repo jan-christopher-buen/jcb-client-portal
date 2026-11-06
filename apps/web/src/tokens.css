@@ -1,0 +1,41 @@
+:root {
+  font-family: 'DM Sans', system-ui, sans-serif;
+  color: #f5f5f5;
+  background: #101010;
+  font-synthesis: none;
+  --canvas: #101010;
+  --surface: #1a1a1a;
+  --raised: #242424;
+  --text: #f5f5f5;
+  --muted: #b8b8b8;
+  --accent: #ff9b54;
+  --border: #383838;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.6;
+}
+h1,
+h2 {
+  font-family: 'Space Grotesk', system-ui, sans-serif;
+}
+button,
+input {
+  font: inherit;
+}
+a {
+  color: inherit;
+}
+:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 5px;
+}
+.missing {
+  max-width: 640px;
+  margin: 10vh auto;
+  padding: 24px;
+}
