@@ -8,6 +8,7 @@ import { Organizations, Organization } from './Organizations.js'
 import styles from './App.module.css'
 import { ProposalList, ProposalDetail } from './Proposals.js'
 import { ProjectOverview, MilestoneReview } from './Projects.js'
+import { DeliverableDetail, DeliverableEditor } from './Deliverables.js'
 import { ChangeList, ChangeDetail, ChangeOfferEditor } from './Changes.js'
 import { ProposalEditor } from './ProposalEditor.js'
 function consumeToken() {
@@ -221,6 +222,26 @@ export function App() {
                   element={
                     user?.role === 'OWNER' ? (
                       <ProposalEditor />
+                    ) : (
+                      <Navigate to="/" replace />
+                    )
+                  }
+                />
+                <Route
+                  path="/organizations/:orgId/projects/:projectId/deliverables/:deliverableId"
+                  element={
+                    user ? (
+                      <DeliverableDetail />
+                    ) : (
+                      <Navigate to="/sign-in" replace />
+                    )
+                  }
+                />
+                <Route
+                  path="/organizations/:orgId/projects/:projectId/deliverables/:deliverableId/versions/:versionId/edit"
+                  element={
+                    user?.role === 'OWNER' ? (
+                      <DeliverableEditor />
                     ) : (
                       <Navigate to="/" replace />
                     )

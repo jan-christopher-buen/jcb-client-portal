@@ -15,6 +15,7 @@ import { invitationRoutes } from './invitations/routes.js'
 import { localMailer, type Mailer } from './invitations/mail.js'
 import { HttpError } from './errors.js'
 import { ZodError } from 'zod'
+import { deliverableRoutes } from './deliverables/routes.js'
 import { changeRoutes } from './changes/routes.js'
 import { projectRoutes } from './projects/routes.js'
 import { proposalRoutes } from './proposals/routes.js'
@@ -85,6 +86,10 @@ export function createApp(
   app.use('/api/organizations/:orgId', projectRoutes(db))
   app.use('/api/organizations/:orgId/projects/:projectId', changeRoutes(db))
   app.use(
+    '/api/organizations/:orgId/projects/:projectId',
+    deliverableRoutes(db),
+  )
+  app.use(
     '/api',
     invitationRoutes(db, config, dependencies.mailer ?? localMailer(config)),
   )
@@ -114,6 +119,8 @@ export function createApp(
         '/organizations/:orgId/proposals/:proposalId/versions/:versionId/edit',
         '/organizations/:orgId/projects/:projectId',
         '/organizations/:orgId/projects/:projectId/milestones/:milestoneId',
+        '/organizations/:orgId/projects/:projectId/deliverables/:deliverableId',
+        '/organizations/:orgId/projects/:projectId/deliverables/:deliverableId/versions/:versionId/edit',
         '/organizations/:orgId/projects/:projectId/changes',
         '/organizations/:orgId/projects/:projectId/changes/:requestId',
         '/organizations/:orgId/projects/:projectId/changes/:requestId/offers/:offerId/edit',

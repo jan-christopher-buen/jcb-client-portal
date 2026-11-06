@@ -464,3 +464,146 @@ export function phpAdjustmentToMinor(value: string) {
   const minor = BigInt(whole!) * 100n + BigInt(fraction.padEnd(2, '0'))
   return signedAdjustmentSchema.parse((negative ? -minor : minor).toString())
 }
+
+// Deliberately accepts DNS destinations only. No resolution or fetching occurs.
+export function externalHttpsUrl(value: string): string | null {
+  if (
+    value.length > 1000 ||
+    !/^https:\/\//i.test(value) ||
+    /[\s\\]/u.test(value) ||
+    [...value].some(
+      (character) =>
+        character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127,
+    ) ||
+    /%(?![a-f0-9]{2})/i.test(value)
+  )
+    return null
+  const authority = value.match(/^https:\/\/([^/?#]*)/i)?.[1]
+  if (!authority || authority.includes('@')) return null
+  try {
+    const url = new URL(value),
+      host = url.hostname.toLowerCase().replace(/\.$/, '')
+    if (
+      url.protocol !== 'https:' ||
+      url.username ||
+      url.password ||
+      !host.includes('.') ||
+      host.includes(':') ||
+      host.startsWith('[') ||
+      /^[0-9.]+$/.test(host)
+    )
+      return null
+    if (
+      ['localhost', 'local', 'internal', 'lan', 'home', 'localdomain'].some(
+        (suffix) => host === suffix || host.endsWith('.' + suffix),
+      )
+    )
+      return null
+    if (
+      host.length > 253 ||
+      host
+        .split('.')
+        .some((part) => !/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(part))
+    )
+      return null
+    return url.href
+  } catch {
+    return null
+  }
+}
+export const deliverableLinkSchema = z
+  .object({
+    label: nameSchema,
+    url: z
+      .string()
+      .max(1000)
+      .refine(
+        (v) => externalHttpsUrl(v) !== null,
+        'Use an HTTPS DNS URL without credentials or local/IP destinations.',
+      )
+      .transform((v) => externalHttpsUrl(v)!),
+  })
+  .strict()
+export const deliverableContentSchema = z
+  .object({
+    title: nameSchema,
+    description: z.string().trim().min(1).max(8000),
+    links: z.array(deliverableLinkSchema).max(5),
+  })
+  .strict()
+export const deliverableMetadataSchema = z
+  .object({ required: z.boolean(), position: z.number().int().min(1).max(100) })
+  .strict()
+export const deliverableCreateSchema = deliverableContentSchema.extend(
+  deliverableMetadataSchema.shape,
+)
+export const deliverableEditSchema = deliverableContentSchema.extend({
+  expectedRevision: revisionSchema,
+})
+export const deliverableMetadataEditSchema = deliverableMetadataSchema.extend({
+  expectedRevision: revisionSchema,
+})
+export const deliverablePublishSchema = z
+  .object({
+    expectedRevision: revisionSchema,
+    expectedDeliverableRevision: revisionSchema,
+    reason: z.string().trim().max(2000).default(''),
+  })
+  .strict()
+export const deliverableWithdrawSchema = z
+  .object({ expectedRevision: revisionSchema, reason: reasonSchema })
+  .strict()
+export const deliverableDecisionSchema = reviewDecisionSchema
+export type DeliverableContent = z.infer<typeof deliverableContentSchema>
+export type DeliverableVersionDto = DeliverableContent & {
+  id: string
+  number: number
+  revision: number
+  state: 'DRAFT' | 'PUBLISHED' | 'SUPERSEDED' | 'WITHDRAWN'
+  publishedAt: string | null
+  publicationReason: string
+  decision: {
+    id: string
+    versionId: string
+    actor: { id: string; name: string }
+    outcome: 'ACCEPTED' | 'CHANGES_REQUESTED'
+    feedback: string
+    createdAt: string
+  } | null
+}
+export type DeliverableDto = {
+  id: string
+  projectId: string
+  organizationId: string
+  required: boolean
+  position: number
+  revision: number
+  currentVersionId: string | null
+  acceptance:
+    | 'UNPUBLISHED'
+    | 'PENDING_REVIEW'
+    | 'ACCEPTED'
+    | 'CHANGES_REQUESTED'
+    | 'WITHDRAWN'
+  versions: DeliverableVersionDto[]
+  events: {
+    id: string
+    kind: string
+    versionNumber: number | null
+    reason: string
+    requiredBefore: boolean | null
+    requiredAfter: boolean | null
+    actor: { id: string; name: string }
+    createdAt: string
+  }[]
+}
+export type DeliverableListDto = {
+  deliverables: Omit<DeliverableDto, 'events'>[]
+  project: ChangeProject
+}
+export type DeliverableDetailDto = {
+  deliverable: DeliverableDto
+  project: ChangeProject
+  page: number
+  hasMoreEvents: boolean
+}

@@ -43,6 +43,12 @@ enum ActivityKind {
   CHANGE_OFFER_SUPERSEDED
   CHANGE_DECIDED
   CHANGE_IMPLEMENTED
+  DELIVERABLE_CREATED
+  DELIVERABLE_METADATA_CHANGED
+  DELIVERABLE_PUBLISHED
+  DELIVERABLE_REPLACED
+  DELIVERABLE_WITHDRAWN
+  DELIVERABLE_DECIDED
 }
 model User {
   id String @id @default(uuid()) @db.Uuid
@@ -61,6 +67,8 @@ model User {
   withdrawnReviews MilestoneReview[] @relation("ReviewWithdrawer")
   changeRequests ChangeRequest[]
   changeMessages ChangeMessage[]
+  deliverableDecisions DeliverableDecision[]
+  deliverableEvents DeliverableEvent[]
   changeDecisions ChangeDecision[]
   implementedChanges ChangeRequest[] @relation("ChangeImplementer")
   proposalDecisions ProposalDecision[]
@@ -237,6 +245,8 @@ model Project {
  lockRevision Int @default(0) @map("lock_revision")
  milestones Milestone[]
  workflowEvents WorkflowEvent[]
+ deliverables Deliverable[]
+ deliverableEvents DeliverableEvent[]
  changeRequests ChangeRequest[]
  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
  @@index([organizationId, createdAt, id])
@@ -401,4 +411,83 @@ model ChangeMessage {
  @@index([requestId, createdAt, id])
  @@index([actorId])
  @@map("change_messages")
+}
+
+enum DeliverableVersionState {
+ DRAFT
+ PUBLISHED
+ SUPERSEDED
+ WITHDRAWN
+}
+enum DeliverableOutcome {
+ ACCEPTED
+ CHANGES_REQUESTED
+}
+model Deliverable {
+ id String @id @default(uuid()) @db.Uuid
+ projectId String @map("project_id") @db.Uuid
+ organizationId String @map("organization_id") @db.Uuid
+ project Project @relation(fields: [projectId, organizationId], references: [id, organizationId], onDelete: Restrict, onUpdate: NoAction)
+ required Boolean @default(true)
+ position Int
+ revision Int @default(0)
+ currentVersionId String? @map("current_version_id") @db.Uuid
+ currentVersion DeliverableVersion? @relation("CurrentDeliverableVersion", fields: [currentVersionId, id], references: [id, deliverableId], onDelete: Restrict, onUpdate: NoAction)
+ versions DeliverableVersion[] @relation("DeliverableVersions")
+ events DeliverableEvent[]
+ createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+ @@unique([id, projectId, organizationId])
+ @@unique([projectId, position])
+ @@map("deliverables")
+}
+model DeliverableVersion {
+ id String @id @default(uuid()) @db.Uuid
+ deliverableId String @map("deliverable_id") @db.Uuid
+ deliverable Deliverable @relation("DeliverableVersions", fields: [deliverableId], references: [id], onDelete: Restrict)
+ currentFor Deliverable[] @relation("CurrentDeliverableVersion")
+ number Int
+ revision Int @default(0)
+ state DeliverableVersionState @default(DRAFT)
+ title String
+ description String
+ links Json @db.JsonB
+ publishedAt DateTime? @map("published_at") @db.Timestamptz(6)
+ publicationReason String @default("") @map("publication_reason")
+ createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+ decision DeliverableDecision?
+ @@unique([id, deliverableId])
+ @@unique([deliverableId, number])
+ @@map("deliverable_versions")
+}
+model DeliverableDecision {
+ id String @id @default(uuid()) @db.Uuid
+ versionId String @unique @map("version_id") @db.Uuid
+ version DeliverableVersion @relation(fields: [versionId], references: [id], onDelete: Restrict)
+ actorId String @map("actor_id") @db.Uuid
+ actor User @relation(fields: [actorId], references: [id], onDelete: Restrict)
+ outcome DeliverableOutcome
+ feedback String
+ createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+ @@index([actorId])
+ @@map("deliverable_decisions")
+}
+model DeliverableEvent {
+ id String @id @default(uuid()) @db.Uuid
+ projectId String @map("project_id") @db.Uuid
+ organizationId String @map("organization_id") @db.Uuid
+ project Project @relation(fields: [projectId, organizationId], references: [id, organizationId], onDelete: Restrict, onUpdate: NoAction)
+ deliverableId String @map("deliverable_id") @db.Uuid
+ deliverable Deliverable @relation(fields: [deliverableId, projectId, organizationId], references: [id, projectId, organizationId], onDelete: Restrict, onUpdate: NoAction)
+ actorId String @map("actor_id") @db.Uuid
+ actor User @relation(fields: [actorId], references: [id], onDelete: Restrict)
+ versionNumber Int? @map("version_number")
+ kind ActivityKind
+ reason String @default("")
+ requiredBefore Boolean? @map("required_before")
+ requiredAfter Boolean? @map("required_after")
+ createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+ @@index([deliverableId, createdAt, id])
+ @@index([projectId, createdAt, id])
+ @@index([actorId])
+ @@map("deliverable_events")
 }
