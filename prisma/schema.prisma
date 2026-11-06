@@ -23,6 +23,11 @@ enum ActivityKind {
   INVITATION_DELIVERY_FAILED
   MEMBERSHIP_ACTIVATED
   MEMBERSHIP_REVOKED
+  PROPOSAL_CREATED
+  PROPOSAL_SENT
+  PROPOSAL_SUPERSEDED
+  PROPOSAL_DECIDED
+  PROJECT_CREATED
 }
 model User {
   id String @id @default(uuid()) @db.Uuid
@@ -35,6 +40,7 @@ model User {
   memberships Membership[]
   invitations Invitation[]
   activities ActivityEvent[]
+  proposalDecisions ProposalDecision[]
   @@map("users")
 }
 model Organization {
@@ -43,6 +49,8 @@ model Organization {
   notes String @default("")
   archivedAt DateTime? @map("archived_at") @db.Timestamptz(6)
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  proposals Proposal[]
+  projects Project[]
   contacts Contact[]
   memberships Membership[]
   invitations Invitation[]
@@ -109,4 +117,84 @@ model AuthThrottle {
   resetAt DateTime @map("reset_at") @db.Timestamptz(6)
   @@index([resetAt])
   @@map("auth_throttles")
+}
+
+enum ProposalState {
+ DRAFT
+ SENT
+ SUPERSEDED
+ APPROVED
+ DECLINED
+}
+enum DecisionOutcome {
+ APPROVED
+ DECLINED
+}
+enum ProjectStatus {
+ PLANNED
+}
+model Proposal {
+ id String @id @default(uuid()) @db.Uuid
+ organizationId String @map("organization_id") @db.Uuid
+ organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+ publishedVersionId String? @map("published_version_id") @db.Uuid
+ publishedVersion ProposalVersion? @relation("PublishedVersion", fields: [publishedVersionId, id, organizationId], references: [id, proposalId, organizationId], onDelete: Restrict, onUpdate: NoAction)
+ lockRevision Int @default(0) @map("lock_revision")
+ createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+ versions ProposalVersion[] @relation("ProposalVersions")
+ projects Project[]
+ @@unique([id, organizationId])
+ @@index([organizationId, createdAt, id])
+ @@map("proposals")
+}
+model ProposalVersion {
+ id String @id @default(uuid()) @db.Uuid
+ proposalId String @map("proposal_id") @db.Uuid
+ organizationId String @map("organization_id") @db.Uuid
+ proposal Proposal @relation("ProposalVersions", fields: [proposalId, organizationId], references: [id, organizationId], onDelete: Restrict, onUpdate: NoAction)
+ publishedFor Proposal[] @relation("PublishedVersion")
+ number Int
+ state ProposalState @default(DRAFT)
+ editRevision Int @default(0) @map("edit_revision")
+ title String
+ scope String
+ exclusions String
+ deliveryAssumptions String @map("delivery_assumptions")
+ internalNotes String @default("") @map("internal_notes")
+ currency String @default("PHP") @db.VarChar(3)
+ items Json @db.JsonB
+ totalMinor BigInt @map("total_minor")
+ sentAt DateTime? @map("sent_at") @db.Timestamptz(6)
+ createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+ decision ProposalDecision?
+ projects Project[]
+ @@unique([proposalId, number])
+ @@unique([id, proposalId, organizationId])
+ @@map("proposal_versions")
+}
+model ProposalDecision {
+ id String @id @default(uuid()) @db.Uuid
+ versionId String @unique @map("version_id") @db.Uuid
+ version ProposalVersion @relation(fields: [versionId], references: [id], onDelete: Restrict)
+ actorId String @map("actor_id") @db.Uuid
+ actor User @relation(fields: [actorId], references: [id], onDelete: Restrict)
+ outcome DecisionOutcome
+ createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+ projects Project[]
+ @@index([actorId])
+ @@map("proposal_decisions")
+}
+model Project {
+ id String @id @default(uuid()) @db.Uuid
+ organizationId String @map("organization_id") @db.Uuid
+ organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+ proposalId String @unique @map("proposal_id") @db.Uuid
+ proposal Proposal @relation(fields: [proposalId, organizationId], references: [id, organizationId], onDelete: Restrict, onUpdate: NoAction)
+ approvedVersionId String @unique @map("approved_version_id") @db.Uuid
+ approvedVersion ProposalVersion @relation(fields: [approvedVersionId, proposalId, organizationId], references: [id, proposalId, organizationId], onDelete: Restrict, onUpdate: NoAction)
+ approval ProposalDecision @relation(fields: [approvedVersionId], references: [versionId], onDelete: Restrict, onUpdate: NoAction)
+ status ProjectStatus @default(PLANNED)
+ createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+ @@index([organizationId, createdAt, id])
+ @@map("projects")
 }
