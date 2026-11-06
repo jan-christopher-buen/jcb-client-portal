@@ -323,3 +323,144 @@ export function milestoneProgress(
     total: required.length,
   }
 }
+
+export const signedAdjustmentSchema = z
+  .string()
+  .regex(/^(0|-?[1-9][0-9]{0,17})$/)
+  .refine(
+    (v) =>
+      /^(0|-?[1-9][0-9]{0,17})$/.test(v) &&
+      BigInt(v) >= -MAX_TOTAL_MINOR &&
+      BigInt(v) <= MAX_TOTAL_MINOR,
+  )
+export const changeRequestSchema = z
+  .object({
+    title: nameSchema,
+    requestedChange: z.string().trim().min(1).max(8000),
+    businessContext: z.string().trim().min(1).max(4000),
+  })
+  .strict()
+export const changeMessageSchema = z
+  .object({
+    kind: z.enum(['CLARIFICATION', 'RESPONSE', 'OWNER_NOTE']),
+    body: z.string().trim().min(1).max(4000),
+    expectedRevision: revisionSchema,
+  })
+  .strict()
+export const changeOfferSchema = z
+  .object({
+    scope: z.string().trim().min(1).max(8000),
+    exclusions: z.string().trim().max(4000),
+    adjustmentMinor: signedAdjustmentSchema,
+    scheduleImpact: z.string().trim().min(1).max(2000),
+  })
+  .strict()
+export const changeOfferEditSchema = changeOfferSchema.extend({
+  expectedRevision: revisionSchema,
+})
+export const changeImplementSchema = z
+  .object({ expectedRevision: revisionSchema, note: reasonSchema })
+  .strict()
+export type ChangeRequestInput = z.infer<typeof changeRequestSchema>
+export type ChangeOfferInput = z.infer<typeof changeOfferSchema>
+export type AgreedAmounts = {
+  originalMinor: string
+  adjustmentsMinor: string
+  revisedMinor: string
+  approvedChanges: {
+    requestId: string
+    offerId: string
+    title: string
+    number: number
+    adjustmentMinor: string
+  }[]
+}
+export type ChangeOfferDto = ChangeOfferInput & {
+  id: string
+  number: number
+  revision: number
+  state: 'DRAFT' | 'PUBLISHED' | 'SUPERSEDED' | 'APPROVED' | 'DECLINED'
+  publishedAt: string | null
+  decision: DecisionReceipt | null
+}
+export type ChangeRequestDto = ChangeRequestInput & {
+  id: string
+  projectId: string
+  organizationId: string
+  revision: number
+  state:
+    | 'OPEN'
+    | 'NEEDS_CLARIFICATION'
+    | 'OFFERED'
+    | 'APPROVED'
+    | 'DECLINED'
+    | 'IMPLEMENTED'
+  creator: { id: string; name: string }
+  createdAt: string
+  publishedOfferId: string | null
+  implementationNote: string | null
+  implementedAt: string | null
+  implementer: { id: string; name: string } | null
+  messages: {
+    id: string
+    kind: 'CLARIFICATION' | 'RESPONSE' | 'OWNER_NOTE'
+    body: string
+    createdAt: string
+    actor: { id: string; name: string }
+  }[]
+  offers: ChangeOfferDto[]
+}
+export type ChangeProject = {
+  id: string
+  status: ProjectStatus
+  revision: number
+}
+export type ChangeDetailDto = {
+  request: ChangeRequestDto
+  amounts: AgreedAmounts
+  project: ChangeProject
+}
+export type ChangeListDto = {
+  requests: Pick<
+    ChangeRequestDto,
+    'id' | 'title' | 'state' | 'createdAt' | 'publishedOfferId'
+  >[]
+  amounts: AgreedAmounts
+  project: ChangeProject
+  page: number
+  hasMore: boolean
+}
+export function revisedAgreement(original: bigint, adjustments: bigint[]) {
+  if (
+    original < 0n ||
+    original > MAX_TOTAL_MINOR ||
+    adjustments.some((v) => v < -MAX_TOTAL_MINOR || v > MAX_TOTAL_MINOR)
+  )
+    throw new Error('Amount outside supported bounds')
+  const adjustment = adjustments.reduce((sum, value) => sum + value, 0n)
+  const revised = original + adjustment
+  if (revised < 0n || revised > MAX_TOTAL_MINOR)
+    throw new Error(
+      'Revised agreed amount must be between zero and the supported maximum',
+    )
+  return {
+    originalMinor: original.toString(),
+    adjustmentsMinor: adjustment.toString(),
+    revisedMinor: revised.toString(),
+  }
+}
+export function formatSignedPhp(value: string) {
+  if (!/^(0|-?[1-9][0-9]*)$/.test(value))
+    throw new Error('Invalid signed minor-unit value')
+  return `${value.startsWith('-') ? '−' : ''}${formatPhp(value.replace('-', ''))}`
+}
+export function phpAdjustmentToMinor(value: string) {
+  if (!/^-?(0|[1-9][0-9]{0,15})(\.[0-9]{1,2})?$/.test(value))
+    throw new Error(
+      'Enter a signed PHP amount with up to two decimal places, without commas.',
+    )
+  const negative = value.startsWith('-'),
+    [whole, fraction = ''] = value.replace('-', '').split('.')
+  const minor = BigInt(whole!) * 100n + BigInt(fraction.padEnd(2, '0'))
+  return signedAdjustmentSchema.parse((negative ? -minor : minor).toString())
+}

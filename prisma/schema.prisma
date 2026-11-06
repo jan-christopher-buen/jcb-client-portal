@@ -36,6 +36,13 @@ enum ActivityKind {
   MILESTONE_WITHDRAWN
   MILESTONE_REOPENED
   MILESTONE_DECIDED
+  CHANGE_REQUESTED
+  CHANGE_CLARIFICATION
+  CHANGE_RESPONDED
+  CHANGE_OFFER_PUBLISHED
+  CHANGE_OFFER_SUPERSEDED
+  CHANGE_DECIDED
+  CHANGE_IMPLEMENTED
 }
 model User {
   id String @id @default(uuid()) @db.Uuid
@@ -52,6 +59,10 @@ model User {
   submittedReviews MilestoneReview[] @relation("ReviewSubmitter")
   decidedReviews MilestoneReview[] @relation("ReviewDecider")
   withdrawnReviews MilestoneReview[] @relation("ReviewWithdrawer")
+  changeRequests ChangeRequest[]
+  changeMessages ChangeMessage[]
+  changeDecisions ChangeDecision[]
+  implementedChanges ChangeRequest[] @relation("ChangeImplementer")
   proposalDecisions ProposalDecision[]
   @@map("users")
 }
@@ -226,6 +237,7 @@ model Project {
  lockRevision Int @default(0) @map("lock_revision")
  milestones Milestone[]
  workflowEvents WorkflowEvent[]
+ changeRequests ChangeRequest[]
  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
  @@index([organizationId, createdAt, id])
  @@unique([id, organizationId])
@@ -298,4 +310,95 @@ model WorkflowEvent {
  @@index([milestoneId])
  @@index([actorId])
  @@map("workflow_events")
+}
+
+enum ChangeState {
+ OPEN
+ NEEDS_CLARIFICATION
+ OFFERED
+ APPROVED
+ DECLINED
+ IMPLEMENTED
+}
+enum ChangeOfferState {
+ DRAFT
+ PUBLISHED
+ SUPERSEDED
+ APPROVED
+ DECLINED
+}
+enum ChangeMessageKind {
+ CLARIFICATION
+ RESPONSE
+ OWNER_NOTE
+}
+model ChangeRequest {
+ id String @id @default(uuid()) @db.Uuid
+ projectId String @map("project_id") @db.Uuid
+ organizationId String @map("organization_id") @db.Uuid
+ project Project @relation(fields: [projectId, organizationId], references: [id, organizationId], onDelete: Restrict, onUpdate: NoAction)
+ createdBy String @map("created_by") @db.Uuid
+ creator User @relation(fields: [createdBy], references: [id], onDelete: Restrict)
+ title String
+ requestedChange String @map("requested_change")
+ businessContext String @map("business_context")
+ state ChangeState @default(OPEN)
+ revision Int @default(0)
+ publishedOfferId String? @map("published_offer_id") @db.Uuid
+ publishedOffer ChangeOffer? @relation("PublishedChangeOffer", fields: [publishedOfferId, id], references: [id, requestId], onDelete: Restrict, onUpdate: NoAction)
+ offers ChangeOffer[] @relation("ChangeOffers")
+ messages ChangeMessage[]
+ implementationNote String? @map("implementation_note")
+ implementedBy String? @map("implemented_by") @db.Uuid
+ implementer User? @relation("ChangeImplementer", fields: [implementedBy], references: [id], onDelete: Restrict)
+ implementedAt DateTime? @map("implemented_at") @db.Timestamptz(6)
+ createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+ @@unique([id, projectId, organizationId])
+ @@index([projectId, createdAt, id])
+ @@index([createdBy])
+ @@index([implementedBy])
+ @@map("change_requests")
+}
+model ChangeOffer {
+ id String @id @default(uuid()) @db.Uuid
+ requestId String @map("request_id") @db.Uuid
+ request ChangeRequest @relation("ChangeOffers", fields: [requestId], references: [id], onDelete: Restrict)
+ publishedFor ChangeRequest[] @relation("PublishedChangeOffer")
+ number Int
+ state ChangeOfferState @default(DRAFT)
+ revision Int @default(0)
+ scope String
+ exclusions String
+ adjustmentMinor BigInt @map("adjustment_minor")
+ scheduleImpact String @map("schedule_impact")
+ publishedAt DateTime? @map("published_at") @db.Timestamptz(6)
+ createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+ decision ChangeDecision?
+ @@unique([requestId, number])
+ @@unique([id, requestId])
+ @@map("change_offers")
+}
+model ChangeDecision {
+ id String @id @default(uuid()) @db.Uuid
+ offerId String @unique @map("offer_id") @db.Uuid
+ offer ChangeOffer @relation(fields: [offerId], references: [id], onDelete: Restrict)
+ actorId String @map("actor_id") @db.Uuid
+ actor User @relation(fields: [actorId], references: [id], onDelete: Restrict)
+ outcome DecisionOutcome
+ createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+ @@index([actorId])
+ @@map("change_decisions")
+}
+model ChangeMessage {
+ id String @id @default(uuid()) @db.Uuid
+ requestId String @map("request_id") @db.Uuid
+ request ChangeRequest @relation(fields: [requestId], references: [id], onDelete: Restrict)
+ actorId String @map("actor_id") @db.Uuid
+ actor User @relation(fields: [actorId], references: [id], onDelete: Restrict)
+ kind ChangeMessageKind
+ body String
+ createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+ @@index([requestId, createdAt, id])
+ @@index([actorId])
+ @@map("change_messages")
 }
