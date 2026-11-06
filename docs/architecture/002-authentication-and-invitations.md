@@ -1,6 +1,6 @@
 # ADR-002: Authentication and invitation-only access
 
-Status: implemented for the first M2 local slice. Supersedes ADR-001's M1-only authentication limitations. M2 proposals and project workflows remain deferred.
+Status: implemented for the first M2 local slice. Supersedes ADR-001's M1-only authentication limitations. Proposal and planned-project behavior is now described in [ADR-003](003-proposal-approval.md); authentication decisions in this record remain in force.
 
 ## Identity and sessions
 

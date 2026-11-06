@@ -1,18 +1,18 @@
 # jcb client portal
 
-A client portal for freelance web development and SEO engagements, bringing client organizations and invitation-only access into a shared workspace. Proposal, milestone, and handover workflows are planned for later slices.
+A client portal for freelance web development and SEO engagements, bringing client organizations and invitation-only access into a shared workspace. Versioned proposals, client decisions, and planned projects build on that access foundation. Milestone and handover workflows remain planned for later slices.
 
-**Current scope: M2 authentication and client invitations, local development.** Owners can manage organizations and business contacts, issue invitations, and revoke client memberships. Invited clients can create an account or sign in with an existing account and access only their active organizations. This is not the complete portal or a production release.
+**Current scope: M2 authentication, proposals, and planned projects in local development.** Owners can manage organizations and business contacts, issue invitations, and revoke client memberships. Invited clients can create an account or sign in with an existing account and access only their active organizations. Owners can draft and publish versioned PHP proposals; active clients can approve or decline, with approvals atomically creating one planned project. This is not the complete portal or a production release.
 
 ## Stack and architecture
 
 React + strict TypeScript + Vite + React Router + CSS modules; Node 24 + Express; PostgreSQL + Prisma 7; Passport local + Argon2id; PostgreSQL-backed sessions; Zod validation; Nodemailer SMTP to a local mail sink.
 
-- `apps/web`: sign-in, invitation onboarding, owner/client organization screens
-- `apps/api`: authentication, scoped organization resources, invitation transactions
+- `apps/web`: sign-in, invitation onboarding, owner/client organization, proposal editor/review, and approved-scope project screens
+- `apps/api`: authentication, scoped organization resources, invitation and proposal decision transactions
 - `packages/contracts`: shared input schemas and DTOs; no browser ORM models
 - `prisma`: additive migrations and session/business constraints
-- `docs`: [architecture](docs/architecture/002-authentication-and-invitations.md) and [implemented slice](docs/product/auth-slice.md)
+- `docs`: [authentication architecture](docs/architecture/002-authentication-and-invitations.md), [proposal architecture](docs/architecture/003-proposal-approval.md), and [implemented proposal slice](docs/product/proposal-slice.md)
 
 Production builds serve browser assets and `/api` from one Express origin. Development uses the Vite API proxy. Lowercase `jcb.` branding uses system font fallbacks until licensed local font files are available.
 
@@ -75,6 +75,28 @@ Open **http://localhost:5173**, sign in as the provisioned owner, create an orga
 - Clients receive only their active organizations, without owner discovery notes, contacts, or access administration. Archiving an organization removes client access until restored. Revoked memberships remain revoked after restoration.
 - Invitation and membership events record actor, time and target without passwords, tokens, or session secrets.
 
+## Proposals and planned projects
+
+Open an organization, then **Proposals and projects**. Owners create drafts with title, scope, exclusions, delivery assumptions, private notes, and ordered line items. Save the draft to obtain the server-calculated total; review it, then explicitly send/publish it. Publishing shares it in the portal and does not send email.
+
+Only PHP is supported. Prices accept decimal PHP text; the API stores/serializes whole-centavo values as strings and calculates totals with BigInt. Explicit zero-price items are allowed. Quantities are integers from 1 to 10,000, with 1–100 items, maximum unit price PHP 10,000,000,000.00 and maximum total PHP 1,000,000,000,000,000.00. Taxes, discounts and fractional quantities are not implemented.
+
+Sent snapshots and their ordered items are immutable. Creating a revision draft leaves the current published version available; publishing the replacement supersedes the old undecided version. Drafts and private notes are never included in client responses. Each proposal is limited to 100 versions.
+
+Active client members may approve or decline the current sent version. The owner cannot act for the client. Approval records the real actor/version/time, creates exactly one planned project, and appends history in one transaction. Decline creates no project. Identical retries return the original result; conflicting or stale decisions return a clear conflict. Approved proposals are locked. If approval wins while a revision draft exists, that draft stays private and cannot be edited/published.
+
+Projects display the actual approved scope and cost breakdown, with status **planned**. There are no milestone actions or progress metrics yet. Approval is a recorded workflow decision, not a claimed legally binding electronic-signature service.
+
+For an existing local checkout, apply the additive migration without resetting data:
+
+```bash
+nvm use
+npm run db:generate
+npm run db:migrate
+```
+
+Existing owner/client accounts and memberships are retained. Stop/restart development servers after migrating; start the mail sink only when testing invitations.
+
 ## Checks and scripts
 
 ```bash
@@ -86,7 +108,7 @@ npm run test:integration
 npm run build
 ```
 
-Integration tests use the dedicated `TEST_DATABASE_URL`, apply additive migrations, and clean up only their generated fixtures. They reject remote hosts, development database names, and matching development/test names. They do not reset a database. The suite starts an ephemeral local SMTP sink. Keep the test database reserved for automated checks; it must not contain a manually provisioned owner.
+Integration tests use the dedicated `TEST_DATABASE_URL`, apply additive migrations, and clean up only their generated fixtures. They reject remote hosts, development database names, and matching development/test names. They do not reset a database. Integration files run sequentially to respect the single-owner constraint; proposal race tests use separate database pools and deliberately overlapping requests. Generated failure triggers verify transaction rollback and retry exhaustion. The suite starts an ephemeral local SMTP sink. Keep the test database reserved for automated checks; it must not contain a manually provisioned owner.
 
 Other commands: `npm run format` applies formatting; `npm run db:migrate` deploys checked-in migrations to the local development database; `npm start` serves the compiled app and API after `npm run build`. For a local single-origin check, use `APP_ORIGIN=http://localhost:3000` and stop Vite/API development servers first.
 
@@ -94,6 +116,6 @@ GitHub Actions supplies PostgreSQL and runs formatting, lint, types, smoke/integ
 
 ## Limitations
 
-No proposals, projects, billing, uploads, AI, external email delivery, password recovery, MFA, or public signup are implemented. Owner detail sections show up to 100 records; organization lists have 20-row pages. SMTP delivery has no durable outbox or automatic retry; a crash can require reissuing an invitation. Login limits are shared by users behind the same IP.
+Milestones, project status transitions, change requests, billing, uploads, AI, external email delivery, password recovery, MFA, and public signup are not implemented. Owner detail sections show up to 100 records; organization lists have 20-row pages. SMTP delivery has no durable outbox or automatic retry; a crash can require reissuing an invitation. Login limits are shared by users behind the same IP. Proposal editor warnings cover links/page unload; browser-history navigation does not prompt before leaving unsaved input.
 
 Production invitation delivery is disabled. Hosting, budget, HTTPS and exact proxy trust, backup/restore, retention, and production abuse controls remain deployment gates. No staging deployment or public demo is available, and no production readiness is claimed.
