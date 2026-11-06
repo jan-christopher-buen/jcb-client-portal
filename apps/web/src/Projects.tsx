@@ -10,6 +10,7 @@ import {
 import { api, errorMessage } from './api.js'
 import { useSession } from './session.js'
 import { useResource } from './useResource.js'
+import { ProjectChanges } from './Changes.js'
 import { Snapshot } from './Proposals.js'
 import styles from './App.module.css'
 const label = (s: string) => s.toLowerCase().replaceAll('_', ' ')
@@ -256,7 +257,8 @@ export function ProjectOverview() {
           </>
         )
       )}
-      <h2>Approved scope</h2>
+      <ProjectChanges />
+      <h2>Original approved scope</h2>
       <Failure error={scope.error} reload={scope.reload} />
       {scope.loading ? (
         <p role="status">Loading approved scope…</p>
