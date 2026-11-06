@@ -7,6 +7,8 @@ import {
 import type { PrismaClient, Prisma } from '../generated/prisma/client.js'
 import { HttpError, notFound } from '../errors.js'
 import { calculateTotal } from './money.js'
+import { serialTransaction } from '../transactions.js'
+export { serialTransaction } from '../transactions.js'
 type Db = Prisma.TransactionClient
 type Actor = Express.User
 export const versionInclude = {
@@ -73,42 +75,6 @@ export async function scopedOrganization(
       'Restore the organization before changing proposals.',
     )
   return org
-}
-export async function serialTransaction<T>(
-  db: PrismaClient,
-  run: (tx: Db) => Promise<T>,
-): Promise<T> {
-  for (let attempt = 0; ; attempt++) {
-    try {
-      return await db.$transaction(run, {
-        isolationLevel: 'Serializable',
-        maxWait: 5000,
-        timeout: 10000,
-      })
-    } catch (error) {
-      const details = error as {
-        code?: unknown
-        meta?: {
-          code?: unknown
-          driverAdapterError?: { cause?: { originalCode?: unknown } }
-        }
-      } | null
-      const code = details?.code
-      const sqlCode =
-        details?.meta?.code ??
-        details?.meta?.driverAdapterError?.cause?.originalCode
-      if (
-        code !== 'P2034' &&
-        !(code === 'P2010' && (sqlCode === '40001' || sqlCode === '40P01'))
-      )
-        throw error
-      if (attempt === 3)
-        throw conflict(
-          'RETRY_REQUIRED',
-          'Another request changed this record. Refresh and try again.',
-        )
-    }
-  }
 }
 export async function lockOrganization(tx: Db, id: string, actor: Actor) {
   await tx.$queryRaw`SELECT id FROM organizations WHERE id = ${id}::uuid FOR UPDATE`

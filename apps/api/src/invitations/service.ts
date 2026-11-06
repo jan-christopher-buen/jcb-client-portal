@@ -4,6 +4,7 @@ import { HttpError } from '../errors.js'
 import type { Mailer } from './mail.js'
 import { hashPassword } from '../auth/password.js'
 import { identitySelect } from '../auth/routes.js'
+import { serialTransaction } from '../transactions.js'
 type Tx = Prisma.TransactionClient
 const unavailable = () =>
   new HttpError(
@@ -13,28 +14,6 @@ const unavailable = () =>
   )
 export const tokenHash = (token: string) =>
   createHash('sha256').update(token).digest('hex')
-async function transaction<T>(
-  db: PrismaClient,
-  fn: (tx: Tx) => Promise<T>,
-): Promise<T> {
-  for (let attempt = 0; ; attempt++) {
-    try {
-      return await db.$transaction(fn, {
-        isolationLevel: 'Serializable',
-        timeout: 10000,
-      })
-    } catch (error) {
-      if (
-        attempt >= 3 ||
-        typeof error !== 'object' ||
-        !error ||
-        !('code' in error) ||
-        error.code !== 'P2034'
-      )
-        throw error
-    }
-  }
-}
 async function validInvitation(tx: Tx | PrismaClient, token: string) {
   const invitation = await tx.invitation.findUnique({
     where: { tokenHash: tokenHash(token) },
@@ -69,7 +48,7 @@ export async function createInvitation(
   actorId: string,
 ) {
   const token = randomBytes(32).toString('hex')
-  const invitation = await transaction(db, async (tx) => {
+  const invitation = await serialTransaction(db, async (tx) => {
     await tx.$queryRaw`SELECT id FROM organizations WHERE id = ${organizationId}::uuid FOR UPDATE`
     const organization = await tx.organization.findUnique({
       where: { id: organizationId },
@@ -179,7 +158,7 @@ export async function acceptInvitation(
   const passwordHash = !existing
     ? await hashPassword(input.password!)
     : undefined
-  return transaction(db, async (tx) => {
+  return serialTransaction(db, async (tx) => {
     await tx.$queryRaw`SELECT id FROM organizations WHERE id = ${initial.organizationId}::uuid FOR UPDATE`
     const invitation = await validInvitation(tx, input.token)
     let user = await tx.user.findUnique({ where: { email: invitation.email } })

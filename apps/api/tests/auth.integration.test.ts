@@ -14,13 +14,21 @@ import type { Identity } from '@jcb/contracts'
 const url = testDatabase(process.env),
   tag = randomUUID(),
   secret = randomUUID()
-const db = createDatabase(url),
-  pool = new Pool({ connectionString: url })
+const taggedUrl = (side: string) => {
+  const value = new URL(url)
+  value.searchParams.set('application_name', `jcb-auth-${side}-${tag}`)
+  return value.toString()
+}
+const db = createDatabase(taggedUrl('a')),
+  dbB = createDatabase(taggedUrl('b')),
+  pool = new Pool({ connectionString: url }),
+  poolB = new Pool({ connectionString: url })
 const sink = createMailSink()
 const origin = 'http://localhost:5173',
   password = 'A long test passphrase 2026!'
-let instance: ReturnType<typeof createApp>
-let server: Server
+let instance: ReturnType<typeof createApp>,
+  secondInstance: ReturnType<typeof createApp>
+let server: Server, secondServer: Server
 let owner: Identity,
   clientA: Identity,
   clientB: Identity,
@@ -109,6 +117,9 @@ beforeAll(async () => {
   instance = createApp(config, pool, { db })
   server = instance.app.listen(0, '127.0.0.1')
   await once(server, 'listening')
+  secondInstance = createApp(config, poolB, { db: dbB })
+  secondServer = secondInstance.app.listen(0, '127.0.0.1')
+  await once(secondServer, 'listening')
   const hash = await hashPassword(password)
   owner = await db.user.create({
     data: {
@@ -143,6 +154,9 @@ beforeEach(async () => {
 afterAll(async () => {
   if (server)
     await new Promise<void>((resolve) => server.close(() => resolve()))
+  if (secondServer)
+    await new Promise<void>((resolve) => secondServer.close(() => resolve()))
+  secondInstance?.store.close()
   instance?.store.close()
   await new Promise<void>((resolve) => sink.smtp.close(resolve))
   const organizationIds = [orgA, orgB].filter(Boolean)
@@ -170,6 +184,8 @@ afterAll(async () => {
   await db.session.deleteMany({ where: { sid: { in: [...sessions] } } })
   await db.authThrottle.deleteMany({ where: { key: { in: keys } } })
   await pool.end()
+  await poolB.end()
+  await dbB.$disconnect()
   await db.$disconnect()
 })
 describe('authentication and session boundaries', () => {
@@ -647,15 +663,52 @@ describe('invitations and onboarding', () => {
     const own = await login(owner),
       invitation = await invite(own, email('concurrent')),
       client = agent(),
-      token = await csrf(client)
-    const accept = () =>
-      client
+      secondClient = request.agent(secondServer),
+      token = await csrf(client),
+      secondToken = await csrf(secondClient)
+    const accept = (agent: Agent, csrfToken: string) =>
+      agent
         .post('/api/invitations/accept')
         .set('Origin', origin)
-        .set('X-CSRF-Token', token)
+        .set('X-CSRF-Token', csrfToken)
         .send({ token: invitation.token, name: 'Concurrent client', password })
-    const results = await Promise.all([accept(), accept()])
-    results.forEach(track)
+        .then((response) => {
+          track(response)
+          return response
+        })
+    const coordinator = await pool.connect()
+    let pending: Promise<request.Response>[],
+      blocked = false
+    try {
+      await coordinator.query('BEGIN')
+      // A harmless fixture row update forces raw SELECT FOR UPDATE serialization
+      // conflicts after both independent API connections are waiting.
+      await coordinator.query(
+        'UPDATE organizations SET name = name WHERE id = $1',
+        [orgA],
+      )
+      pending = [accept(client, token), accept(secondClient, secondToken)]
+      for (let i = 0; i < 300; i++) {
+        const waiting = await poolB.query<{ count: string }>(
+          "SELECT count(*) FROM pg_stat_activity WHERE application_name = ANY($1::text[]) AND wait_event_type = 'Lock'",
+          [[`jcb-auth-a-${tag}`, `jcb-auth-b-${tag}`]],
+        )
+        if (Number(waiting.rows[0]!.count) >= 2) {
+          blocked = true
+          break
+        }
+        await new Promise((resolve) => setTimeout(resolve, 10))
+      }
+      await coordinator.query('COMMIT')
+    } finally {
+      await coordinator.query('ROLLBACK')
+      coordinator.release()
+    }
+    const results = await Promise.all(pending)
+    expect(
+      blocked,
+      'Both independent connections must overlap before release',
+    ).toBe(true)
     expect(results.map((r) => r.status).sort()).toEqual([200, 410])
     const user = await db.user.findUniqueOrThrow({
       where: { email: email('concurrent') },
