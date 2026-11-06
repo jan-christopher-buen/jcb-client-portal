@@ -1,0 +1,27 @@
+export function localDatabase(value: string | undefined, kind: 'dev' | 'test') {
+  if (!value)
+    throw new Error(
+      `Missing ${kind === 'test' ? 'TEST_DATABASE_URL' : 'DATABASE_URL'}`,
+    )
+  const url = new URL(value)
+  if (
+    !['postgres:', 'postgresql:'].includes(url.protocol) ||
+    !['localhost', '127.0.0.1', '[::1]'].includes(url.hostname) ||
+    decodeURIComponent(url.pathname) !== `/jcb_portal_${kind}`
+  ) {
+    throw new Error(
+      `Refusing database operation: requires a loopback jcb_portal_${kind} database.`,
+    )
+  }
+  return value
+}
+export function testDatabase(env: NodeJS.ProcessEnv) {
+  const value = localDatabase(env.TEST_DATABASE_URL, 'test')
+  if (env.DATABASE_URL) {
+    const dev = new URL(env.DATABASE_URL),
+      test = new URL(value)
+    if (dev.pathname === test.pathname)
+      throw new Error('Test and development databases must differ.')
+  }
+  return value
+}
