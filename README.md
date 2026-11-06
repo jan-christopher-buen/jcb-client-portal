@@ -116,6 +116,12 @@ Other commands: `npm run format` applies formatting; `npm run db:migrate` deploy
 
 GitHub Actions supplies PostgreSQL and runs formatting, lint, types, smoke/integration tests and build. A remote workflow run requires pushing the branch separately.
 
+## M2 integration checkpoint
+
+The complete local owner → invitation → client onboarding → proposal approval → project → milestone review journey is implemented and reviewed. See the [checkpoint](docs/product/m2-checkpoint.md) for integration fixes, migration validation, current limits and the next milestone. Local validation covers a clean lockfile install, formatting/lint/types, unit/integration tests, a production build and compiled-server checks; earlier full browser verification is retained. Remote CI and deployment remain unverified.
+
+Database commands require plain loopback URLs with the exact development/test database names; query parameters and fragments are rejected so connection options cannot override safety checks. Use dedicated disposable test data. No reset command is supplied.
+
 ## Limitations
 
 Project completion/handover, change requests, billing, uploads, AI, external email delivery, password recovery, MFA, and public signup are not implemented. Owner detail sections show up to 100 records; organization lists have 20-row pages. Projects support 100 milestones and 100 rounds per milestone, unique display-order slots 1–100, and 50 workflow events per page. There is no milestone deletion or order-slot swapping. Due-state displays refresh on reload. SMTP delivery has no durable outbox or automatic retry; a crash can require reissuing an invitation. Login limits are shared by users behind the same IP. Proposal-editor guards cover in-app links/navigation and Back/Forward; supported browsers warn on refresh/tab close. Forced browser exits, crashes, mobile termination and session expiry cannot be guaranteed to preserve unsaved memory.
