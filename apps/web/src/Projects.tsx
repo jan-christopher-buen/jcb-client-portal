@@ -10,6 +10,7 @@ import {
 import { api, errorMessage } from './api.js'
 import { useSession } from './session.js'
 import { useResource } from './useResource.js'
+import { ProjectDeliverables } from './Deliverables.js'
 import { ProjectChanges } from './Changes.js'
 import { Snapshot } from './Proposals.js'
 import styles from './App.module.css'
@@ -257,6 +258,7 @@ export function ProjectOverview() {
           </>
         )
       )}
+      <ProjectDeliverables />
       <ProjectChanges />
       <h2>Original approved scope</h2>
       <Failure error={scope.error} reload={scope.reload} />
