@@ -1,0 +1,21 @@
+{
+  "name": "@jcb/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch --env-file-if-exists=../../.env src/server.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@jcb/contracts": "*",
+    "express": "5.3.0",
+    "helmet": "8.3.0",
+    "express-session": "1.19.0",
+    "connect-pg-simple": "10.0.0",
+    "pg": "8.23.1",
+    "@prisma/client": "7.10.1",
+    "@prisma/adapter-pg": "7.10.1"
+  }
+}
