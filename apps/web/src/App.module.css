@@ -587,3 +587,17 @@
 .itemEditor .panels {
   margin: 0 0 16px;
 }
+
+.checkLabel {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+}
+.checkLabel input {
+  width: auto;
+}
+.reviewRound {
+  border-top: 1px solid var(--border);
+  padding-block: 1rem;
+  overflow-wrap: anywhere;
+}

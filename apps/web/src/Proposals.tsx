@@ -4,7 +4,6 @@ import {
   formatPhp,
   type ProposalDto,
   type ProposalVersionDto,
-  type ProjectDto,
 } from '@jcb/contracts'
 import { api, errorMessage } from './api.js'
 import { useSession } from './session.js'
@@ -96,7 +95,7 @@ export function ProposalList() {
         )}
       </section>
       <section className={styles.panel}>
-        <h2>Planned projects</h2>
+        <h2>Projects</h2>
         {projects.error && (
           <p role="alert" className={styles.error}>
             {projects.error}{' '}
@@ -110,8 +109,8 @@ export function ProposalList() {
             <>
               {!projects.data.projects.length ? (
                 <p>
-                  No planned projects yet. Approving a current proposal creates
-                  one project.
+                  No projects yet. Approving a current proposal creates one
+                  project.
                 </p>
               ) : (
                 <ul className={styles.recordList}>
@@ -425,49 +424,11 @@ export function ProposalDetail() {
                     className={styles.actionLink}
                     to={`${base}/projects/${data.projectId}`}
                   >
-                    Open planned project
+                    Open project
                   </Link>
                 )}
               </section>
             )}
-          </>
-        )
-      )}
-    </>
-  )
-}
-export function ProjectOverview() {
-  const { orgId, projectId } = useParams()
-  const base = `/organizations/${orgId}`
-  const resource = useResource<{ project: ProjectDto }>(
-    `${base}/projects/${projectId}`,
-  )
-  return (
-    <>
-      <Link to={`${base}/proposals`}>← Proposals and projects</Link>
-      <h1>Project overview</h1>
-      {resource.error && (
-        <p role="alert" className={styles.error}>
-          {resource.error}{' '}
-          <button onClick={resource.reload}>Reload project</button>
-        </p>
-      )}
-      {resource.loading ? (
-        <p role="status">Loading project…</p>
-      ) : (
-        resource.data && (
-          <>
-            <p className={styles.notice}>
-              Status: planned. Approved scope is shown below.
-            </p>
-            <Link
-              to={`${base}/proposals/${resource.data.project.proposalId}?version=${resource.data.project.approvedVersion.id}`}
-            >
-              View approved proposal version
-            </Link>
-            <section className={styles.panel}>
-              <Snapshot version={resource.data.project.approvedVersion} />
-            </section>
           </>
         )
       )}

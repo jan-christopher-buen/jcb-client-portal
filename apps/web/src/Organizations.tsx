@@ -295,7 +295,7 @@ export function Organization() {
                 <p>
                   You can access this organization through your accepted
                   invitation. Use Proposals and projects to review shared scope
-                  and open planned projects.
+                  and track project milestones.
                 </p>
               </section>
             ) : (

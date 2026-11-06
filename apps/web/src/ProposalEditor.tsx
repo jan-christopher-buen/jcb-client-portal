@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import { Link, useNavigate, useParams } from 'react-router'
+import { Link, useNavigate, useParams, useBlocker } from 'react-router'
 import {
   proposalDraftSchema,
   formatPhp,
@@ -93,25 +93,17 @@ function DraftForm({
   const [dirty, setDirty] = useState(false),
     [busy, setBusy] = useState(false),
     [error, setError] = useState('')
+  const saved = useRef(false)
+  const blocker = useBlocker(() => dirty && !saved.current)
   useEffect(() => {
     const before = (event: BeforeUnloadEvent) => {
-      if (dirty) event.preventDefault()
-    }
-    const leaving = (event: MouseEvent) => {
-      if (
-        dirty &&
-        event.target instanceof Element &&
-        event.target.closest('a[href]') &&
-        !window.confirm('Discard unsaved draft changes?')
-      )
+      if (dirty && !saved.current) {
         event.preventDefault()
+        event.returnValue = ''
+      }
     }
     window.addEventListener('beforeunload', before)
-    document.addEventListener('click', leaving, true)
-    return () => {
-      window.removeEventListener('beforeunload', before)
-      document.removeEventListener('click', leaving, true)
-    }
+    return () => window.removeEventListener('beforeunload', before)
   }, [dirty])
   function updateRow(index: number, patch: Partial<Row>) {
     setDirty(true)
@@ -164,6 +156,7 @@ function DraftForm({
           ...(version ? { expectedRevision: version.editRevision } : {}),
         },
       )
+      saved.current = true
       setDirty(false)
       navigate(
         `${base}/${proposalId ?? result.proposalId}?version=${result.versionId}`,
@@ -180,6 +173,23 @@ function DraftForm({
       <Link to={proposalId ? `${base}/${proposalId}` : base}>
         ← Proposal review
       </Link>
+      {blocker.state === 'blocked' && (
+        <section
+          role="alert"
+          className={styles.notice}
+          aria-label="Unsaved proposal changes"
+        >
+          <p>You have unsaved draft changes.</p>
+          <div className={styles.actions}>
+            <button type="button" autoFocus onClick={() => blocker.reset()}>
+              Keep editing
+            </button>
+            <button type="button" onClick={() => blocker.proceed()}>
+              Discard changes and leave
+            </button>
+          </div>
+        </section>
+      )}
       <h1>{version ? `Edit draft v${version.number}` : 'New proposal'}</h1>
       <p>
         Drafts are owner-only. Saving does not publish or supersede a sent
