@@ -1,0 +1,48 @@
+# ADR-002: Authentication and invitation-only access
+
+Status: implemented for the first M2 local slice. Supersedes ADR-001's M1-only authentication limitations. Proposal and planned-project behavior is now described in [ADR-003](003-proposal-approval.md); authentication decisions in this record remain in force.
+
+## Identity and sessions
+
+The explicit `owner:create` CLI reads its password from hidden terminal input or stdin. It is restricted to the local development database, creates one owner, refuses existing emails, and never upgrades a client. A SQL partial unique index enforces one owner. Browser routes have no owner-registration flow and strict input schemas reject role/user/email overrides during onboarding.
+
+Passport local verifies Argon2id hashes (64 MiB, three iterations, one lane). Unknown emails perform a dummy Argon2 verification; incorrect, unknown, disabled and malformed login credentials share a generic response. Passwords are 12–128 characters for new accounts. Login attempts are limited to ten per IP per fifteen minutes in PostgreSQL, across app instances. Limiter identifiers are HMAC digests; the server trusts no proxy by default. The tradeoff is a shared limit for users behind the same IP. Expired limiter rows may be removed operationally; production retention is pending.
+
+Passport 0.7 regenerates the session on login. The application then establishes a fresh synchronizer CSRF token and an absolute eight-hour authentication lifetime. Logout destroys the stored session and clears its host-only cookie. Every request deserializes the current enabled user from the database; roles are never taken from the browser. Organization access queries independently check current active membership, so revocation takes effect without requiring logout. Existing cookie security remains HttpOnly, SameSite=Lax and Secure in production.
+
+Every mutation, including login and invitation inspection/acceptance, requires the exact configured Origin and a session-bound `X-CSRF-Token`. `GET /api/auth/csrf` creates an anonymous session and returns the token with no-store headers. The browser retrieves a current token before mutations; old tokens fail after authentication. No authentication credentials are placed in browser storage.
+
+## Invitation identity and lifecycle
+
+Owner issues an invitation to a normalized email. A 256-bit random token is hashed with SHA-256; only the digest is stored in business tables. Expiration is 72 hours. Reissue revokes earlier unaccepted tokens for the same organization/email under a transaction. A SQL partial unique index permits only one pending invitation per organization/email; expired pending rows are revoked on reissue.
+
+The emailed link uses `/invitation#token=...`. The browser reads the fragment into React memory and immediately removes it from the address bar. It never puts tokens in local/session storage or API URLs. The application uses a no-referrer policy. Refreshing the invitation page requires reopening the original email; this intentionally avoids persistent browser token storage.
+
+Inspection uses a POST body and returns organization, invited email and whether an account exists only to the token holder. Invalid/expired/revoked/consumed links return the same unavailable response. Invitation endpoints have a separate thirty-attempt/IP/fifteen-minute limit.
+
+- **New account:** the holder supplies name and a new password. The server takes the email solely from the valid invitation and creates a CLIENT account. Token possession is the email-ownership proof for this flow. No public account creation is available.
+- **Existing account:** the holder must sign in first. The authenticated user's ID and normalized email must match the account identified by the invitation. Supplied passwords do not replace an existing account password.
+
+Acceptance locks the organization row, rechecks the invitation, records consumption, creates/reactivates the unique organization/user membership, and appends safe activity in one serializable transaction. Serialization conflicts have bounded retries. Hashing passwords and SMTP work run outside row locks. Reused tokens return 410; they do not create another membership. A uniqueness race creating the same email across different organizations returns a safe conflict; the user can sign in to accept the other invitation.
+
+Contacts are business records only and never establish authorization. Owner-only discovery notes, contacts, invitations, membership management, and access activity are omitted from client organization responses. Inaccessible organization IDs return 404. The owner may archive records without deleting linked history; archived organizations are unavailable to clients and cannot accept new invitations. Restoring an organization restores access for memberships that remain active.
+
+## Delivery and activity
+
+Development uses Nodemailer SMTP to a loopback-only sink. `mail:dev` binds SMTP 1025 and its inbox UI 8025 to 127.0.0.1, keeps at most fifty messages in memory, and sends no external mail. Normal portal API responses return delivery status and safe invitation metadata, never a raw token or digest. The separate local inbox intentionally displays received email content. Do not expose the sink beyond localhost.
+
+SMTP delivery occurs after the invitation transaction. Failure revokes the newly issued invitation, records failure, and returns a useful error asking the owner to fix the sink and reissue. Sending is synchronous without an outbox or retries, so process crashes can leave pending delivery. Reissue is the recovery mechanism. Production delivery is disabled pending a separately selected provider and durable delivery policy; no invitation URL is exposed in the portal UI.
+
+Activity records contain only enumerated event kind, actor/organization/target identifiers and timestamps. There is no free-form metadata, password, token, session secret, or activity mutation endpoint. The owner sees a bounded recent history with actor names and Asia/Manila timestamps.
+
+Organization lists use twenty-row pages. Owner detail sections are explicitly bounded to the first one hundred contacts/memberships and latest one hundred invitations/events; expanded per-section pagination is deferred.
+
+## References checked
+
+- [Passport password strategy](https://www.passportjs.org/concepts/authentication/password/)
+- [Passport session manager regeneration](https://github.com/jaredhanson/passport/blob/v0.7.0/lib/sessionmanager.js)
+- [Argon2 implementation](https://github.com/ranisalt/node-argon2)
+- [Express session lifecycle](https://expressjs.com/en/resources/middleware/session/)
+- [Nodemailer SMTP](https://nodemailer.com/smtp)
+
+Host proxy trust, HTTPS deployment, production mail, password recovery, MFA, user disable/admin UI, backup/restore, retention, and distributed abuse controls require later work. This slice does not claim completion of the full portal or production readiness.

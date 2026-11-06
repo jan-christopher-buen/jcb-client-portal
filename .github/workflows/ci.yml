@@ -1,0 +1,36 @@
+name: Checks
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: jcb_ci
+          POSTGRES_PASSWORD: ci_only_password
+          POSTGRES_DB: jcb_portal_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U jcb_ci -d jcb_portal_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://jcb_ci:ci_only_password@localhost:5432/jcb_portal_dev
+      TEST_DATABASE_URL: postgresql://jcb_ci:ci_only_password@localhost:5432/jcb_portal_test
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run format:check
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run test:integration
+      - run: npm run build
