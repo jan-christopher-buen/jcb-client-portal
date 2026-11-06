@@ -28,6 +28,14 @@ enum ActivityKind {
   PROPOSAL_SUPERSEDED
   PROPOSAL_DECIDED
   PROJECT_CREATED
+  PROJECT_STATUS_CHANGED
+  MILESTONE_CREATED
+  MILESTONE_EDITED
+  MILESTONE_STARTED
+  MILESTONE_SUBMITTED
+  MILESTONE_WITHDRAWN
+  MILESTONE_REOPENED
+  MILESTONE_DECIDED
 }
 model User {
   id String @id @default(uuid()) @db.Uuid
@@ -40,6 +48,10 @@ model User {
   memberships Membership[]
   invitations Invitation[]
   activities ActivityEvent[]
+  workflowEvents WorkflowEvent[]
+  submittedReviews MilestoneReview[] @relation("ReviewSubmitter")
+  decidedReviews MilestoneReview[] @relation("ReviewDecider")
+  withdrawnReviews MilestoneReview[] @relation("ReviewWithdrawer")
   proposalDecisions ProposalDecision[]
   @@map("users")
 }
@@ -132,6 +144,22 @@ enum DecisionOutcome {
 }
 enum ProjectStatus {
  PLANNED
+ ACTIVE
+ IN_REVIEW
+ ON_HOLD
+ CANCELLED
+}
+enum MilestoneStatus {
+ PLANNED
+ IN_PROGRESS
+ IN_REVIEW
+ ACCEPTED
+}
+enum ReviewStatus {
+ PENDING
+ ACCEPTED
+ CHANGES_REQUESTED
+ WITHDRAWN
 }
 model Proposal {
  id String @id @default(uuid()) @db.Uuid
@@ -194,7 +222,80 @@ model Project {
  approvedVersion ProposalVersion @relation(fields: [approvedVersionId, proposalId, organizationId], references: [id, proposalId, organizationId], onDelete: Restrict, onUpdate: NoAction)
  approval ProposalDecision @relation(fields: [approvedVersionId], references: [versionId], onDelete: Restrict, onUpdate: NoAction)
  status ProjectStatus @default(PLANNED)
+ resumeStatus ProjectStatus? @map("resume_status")
+ lockRevision Int @default(0) @map("lock_revision")
+ milestones Milestone[]
+ workflowEvents WorkflowEvent[]
  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
  @@index([organizationId, createdAt, id])
+ @@unique([id, organizationId])
  @@map("projects")
+}
+
+model Milestone {
+ id String @id @default(uuid()) @db.Uuid
+ projectId String @map("project_id") @db.Uuid
+ organizationId String @map("organization_id") @db.Uuid
+ project Project @relation(fields: [projectId, organizationId], references: [id, organizationId], onDelete: Restrict, onUpdate: NoAction)
+ title String
+ description String
+ dueDate DateTime? @map("due_date") @db.Date
+ required Boolean @default(true)
+ position Int
+ status MilestoneStatus @default(PLANNED)
+ revision Int @default(0)
+ currentReviewId String? @map("current_review_id") @db.Uuid
+ currentReview MilestoneReview? @relation("CurrentReview", fields: [currentReviewId, id], references: [id, milestoneId], onDelete: Restrict, onUpdate: NoAction)
+ reviews MilestoneReview[] @relation("ReviewRounds")
+ workflowEvents WorkflowEvent[]
+ createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+ @@unique([id, projectId, organizationId])
+ @@unique([projectId, position])
+ @@map("milestones")
+}
+model MilestoneReview {
+ id String @id @default(uuid()) @db.Uuid
+ milestoneId String @map("milestone_id") @db.Uuid
+ milestone Milestone @relation("ReviewRounds", fields: [milestoneId], references: [id], onDelete: Restrict)
+ currentFor Milestone[] @relation("CurrentReview")
+ number Int
+ title String
+ description String
+ status ReviewStatus @default(PENDING)
+ submittedBy String @map("submitted_by") @db.Uuid
+ submitter User @relation("ReviewSubmitter", fields: [submittedBy], references: [id], onDelete: Restrict)
+ submittedAt DateTime @default(now()) @map("submitted_at") @db.Timestamptz(6)
+ decisionActorId String? @map("decision_actor_id") @db.Uuid
+ decisionActor User? @relation("ReviewDecider", fields: [decisionActorId], references: [id], onDelete: Restrict)
+ decidedAt DateTime? @map("decided_at") @db.Timestamptz(6)
+ feedback String?
+ withdrawnBy String? @map("withdrawn_by") @db.Uuid
+ withdrawer User? @relation("ReviewWithdrawer", fields: [withdrawnBy], references: [id], onDelete: Restrict)
+ withdrawnAt DateTime? @map("withdrawn_at") @db.Timestamptz(6)
+ withdrawalReason String? @map("withdrawal_reason")
+ @@unique([milestoneId, number])
+ @@unique([id, milestoneId])
+ @@index([submittedBy])
+ @@index([decisionActorId])
+ @@index([withdrawnBy])
+ @@map("milestone_reviews")
+}
+model WorkflowEvent {
+ id String @id @default(uuid()) @db.Uuid
+ projectId String @map("project_id") @db.Uuid
+ organizationId String @map("organization_id") @db.Uuid
+ project Project @relation(fields: [projectId, organizationId], references: [id, organizationId], onDelete: Restrict, onUpdate: NoAction)
+ milestoneId String? @map("milestone_id") @db.Uuid
+ milestone Milestone? @relation(fields: [milestoneId, projectId, organizationId], references: [id, projectId, organizationId], onDelete: Restrict, onUpdate: NoAction)
+ actorId String @map("actor_id") @db.Uuid
+ actor User @relation(fields: [actorId], references: [id], onDelete: Restrict)
+ kind ActivityKind
+ fromState String? @map("from_state")
+ toState String @map("to_state")
+ reason String @default("")
+ createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+ @@index([projectId, createdAt, id])
+ @@index([milestoneId])
+ @@index([actorId])
+ @@map("workflow_events")
 }
