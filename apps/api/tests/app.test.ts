@@ -10,10 +10,11 @@ const config = readConfig({
   NODE_ENV: 'test',
 })
 const pool = new Pool({ connectionString: config.DATABASE_URL })
-const { app, store } = createApp(config, pool)
+const { app, store, db } = createApp(config, pool)
 afterAll(async () => {
   store.close()
   await pool.end()
+  await db.$disconnect()
 })
 describe('public foundation', () => {
   it('reports minimal liveness without database access', async () => {
@@ -34,11 +35,11 @@ describe('public foundation', () => {
     expect(response.headers['set-cookie']).toBeUndefined()
     expect(response.headers['cache-control']).toBe('no-store')
   })
-  it('does not pretend login is implemented', async () => {
+  it('rejects login without CSRF protection', async () => {
     const response = await request(app)
       .post('/api/auth/login')
       .send({ email: 'owner@example.test', password: 'secret' })
-    expect(response.status).toBe(404)
+    expect(response.status).toBe(403)
   })
   it('returns safe errors for malformed JSON and unknown routes', async () => {
     const response = await request(app)

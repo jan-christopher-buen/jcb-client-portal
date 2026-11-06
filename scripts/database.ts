@@ -14,7 +14,7 @@ if (process.argv[2] === 'migrate') {
   try {
     await db.$queryRaw`SELECT 1`
     console.info(
-      'Database connected. M1 has no business fixtures or user accounts to seed.',
+      'Database connected. No accounts or business fixtures are seeded; use owner:create explicitly.',
     )
   } finally {
     await db.$disconnect()

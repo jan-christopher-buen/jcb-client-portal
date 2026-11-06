@@ -5,7 +5,12 @@ const url = testDatabase(process.env)
 const env = { ...process.env, NODE_ENV: 'test' }
 for (const args of [
   ['prisma', 'migrate', 'deploy'],
-  ['vitest', 'run', 'apps/api/tests/session.integration.test.ts'],
+  [
+    'vitest',
+    'run',
+    'apps/api/tests/session.integration.test.ts',
+    'apps/api/tests/auth.integration.test.ts',
+  ],
 ]) {
   const result = spawnSync(args[0]!, args.slice(1), {
     stdio: 'inherit',

@@ -15,6 +15,8 @@ const schema = z.object({
         return false
       }
     }),
+  SMTP_HOST: z.enum(['127.0.0.1', 'localhost', '::1']).default('127.0.0.1'),
+  SMTP_PORT: z.coerce.number().int().min(1).max(65535).default(1025),
   SESSION_SECRET: z.string().min(32),
 })
 export function readConfig(env: NodeJS.ProcessEnv) {

@@ -6,13 +6,37 @@ import type { Pool } from 'pg'
 import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 import type { Config } from './config.js'
+import { createDatabase } from './database.js'
+import type { PrismaClient } from './generated/prisma/client.js'
+import { authentication } from './auth/routes.js'
+import { csrfProtection } from './auth/security.js'
+import { organizationRoutes } from './organizations/routes.js'
+import { invitationRoutes } from './invitations/routes.js'
+import { localMailer, type Mailer } from './invitations/mail.js'
+import { HttpError } from './errors.js'
+import { ZodError } from 'zod'
 
-export function createApp(config: Config, pool: Pool) {
+export function createApp(
+  config: Config,
+  pool: Pool,
+  dependencies: { db?: PrismaClient; mailer?: Mailer } = {},
+) {
+  const db = dependencies.db ?? createDatabase(config.DATABASE_URL)
+  const auth = authentication(db, config)
   const app = express()
   app.disable('x-powered-by')
   // Direct connection only. Set an exact trusted proxy policy after host selection.
   app.set('trust proxy', false)
-  app.use(helmet())
+  app.use(
+    helmet({
+      referrerPolicy: { policy: 'no-referrer' },
+      contentSecurityPolicy: {
+        directives: {
+          upgradeInsecureRequests: config.NODE_ENV === 'production' ? [] : null,
+        },
+      },
+    }),
+  )
   app.use(express.json({ limit: '16kb' }))
   app.get('/health', (_req, res) => {
     res.json({ status: 'ok' })
@@ -45,14 +69,19 @@ export function createApp(config: Config, pool: Pool) {
     },
     sessionMiddleware,
   )
-  app.get('/api/auth/me', (_req, res) => {
-    res.status(401).json({
-      error: {
-        code: 'UNAUTHENTICATED',
-        message: 'Sign in is not available yet.',
-      },
-    })
-  })
+  app.use(
+    '/api',
+    auth.expire,
+    auth.passport.initialize(),
+    auth.passport.session(),
+    csrfProtection(config.APP_ORIGIN),
+  )
+  app.use('/api/auth', auth.router)
+  app.use('/api/organizations', organizationRoutes(db))
+  app.use(
+    '/api',
+    invitationRoutes(db, config, dependencies.mailer ?? localMailer(config)),
+  )
   app.use('/api', (_req, res) => {
     res
       .status(404)
@@ -66,9 +95,12 @@ export function createApp(config: Config, pool: Pool) {
     throw new Error('Web build is missing. Run npm run build first.')
   if (existsSync(resolve(webRoot, 'index.html'))) {
     app.use(express.static(webRoot))
-    app.get(['/', '/sign-in'], (_req, res) => {
-      res.sendFile(resolve(webRoot, 'index.html'))
-    })
+    app.get(
+      ['/', '/sign-in', '/invitation', '/organizations', '/organizations/:id'],
+      (_req, res) => {
+        res.sendFile(resolve(webRoot, 'index.html'))
+      },
+    )
   }
   app.use((_req, res) => {
     res
@@ -76,6 +108,35 @@ export function createApp(config: Config, pool: Pool) {
       .json({ error: { code: 'NOT_FOUND', message: 'Page not found.' } })
   })
   const onError: ErrorRequestHandler = (error: unknown, _req, res, _next) => {
+    if (error instanceof HttpError) {
+      res
+        .status(error.status)
+        .json({ error: { code: error.code, message: error.message } })
+      return
+    }
+    if (error instanceof ZodError) {
+      res.status(400).json({
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Check the required fields and try again.',
+        },
+      })
+      return
+    }
+    if (
+      typeof error === 'object' &&
+      error &&
+      'code' in error &&
+      error.code === 'P2002'
+    ) {
+      res.status(409).json({
+        error: {
+          code: 'CONFLICT',
+          message: 'This record already exists. Refresh and try again.',
+        },
+      })
+      return
+    }
     const malformed =
       error instanceof SyntaxError && 'status' in error && error.status === 400
     const tooLarge =
@@ -99,5 +160,5 @@ export function createApp(config: Config, pool: Pool) {
     })
   }
   app.use(onError)
-  return { app, store }
+  return { app, store, db }
 }

@@ -7,7 +7,7 @@ const pool = new Pool({
   connectionTimeoutMillis: 5000,
 })
 pool.on('error', () => console.error('Database connection failed'))
-const { app, store } = createApp(config, pool)
+const { app, store, db } = createApp(config, pool)
 const server = app.listen(config.PORT, () =>
   console.info(`jcb API listening on port ${config.PORT}`),
 )
@@ -18,7 +18,7 @@ function shutdown() {
   const timer = setTimeout(() => process.exit(1), 10000).unref()
   server.close(() => {
     store.close()
-    void pool.end().then(() => {
+    void Promise.all([pool.end(), db.$disconnect()]).then(() => {
       clearTimeout(timer)
     })
   })
