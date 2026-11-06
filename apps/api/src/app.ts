@@ -15,6 +15,7 @@ import { invitationRoutes } from './invitations/routes.js'
 import { localMailer, type Mailer } from './invitations/mail.js'
 import { HttpError } from './errors.js'
 import { ZodError } from 'zod'
+import { projectRoutes } from './projects/routes.js'
 import { proposalRoutes } from './proposals/routes.js'
 
 export function createApp(
@@ -80,6 +81,7 @@ export function createApp(
   app.use('/api/auth', auth.router)
   app.use('/api/organizations', organizationRoutes(db))
   app.use('/api/organizations/:orgId', proposalRoutes(db))
+  app.use('/api/organizations/:orgId', projectRoutes(db))
   app.use(
     '/api',
     invitationRoutes(db, config, dependencies.mailer ?? localMailer(config)),
@@ -109,6 +111,7 @@ export function createApp(
         '/organizations/:orgId/proposals/:proposalId',
         '/organizations/:orgId/proposals/:proposalId/versions/:versionId/edit',
         '/organizations/:orgId/projects/:projectId',
+        '/organizations/:orgId/projects/:projectId/milestones/:milestoneId',
       ],
       (_req, res) => {
         res.sendFile(resolve(webRoot, 'index.html'))

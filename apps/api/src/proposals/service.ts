@@ -105,12 +105,12 @@ export async function serialTransaction<T>(
       if (attempt === 3)
         throw conflict(
           'RETRY_REQUIRED',
-          'Another request changed this proposal. Refresh and try again.',
+          'Another request changed this record. Refresh and try again.',
         )
     }
   }
 }
-async function lockOrganization(tx: Db, id: string, actor: Actor) {
+export async function lockOrganization(tx: Db, id: string, actor: Actor) {
   await tx.$queryRaw`SELECT id FROM organizations WHERE id = ${id}::uuid FOR UPDATE`
   // Force a serialization retry if disable/revocation committed while this
   // transaction was waiting on the organization lock.

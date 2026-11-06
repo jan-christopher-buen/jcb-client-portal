@@ -12,6 +12,7 @@ for (const args of [
     'apps/api/tests/session.integration.test.ts',
     'apps/api/tests/auth.integration.test.ts',
     'apps/api/tests/proposals.integration.test.ts',
+    'apps/api/tests/workflow.integration.test.ts',
   ],
 ]) {
   const result = spawnSync(args[0]!, args.slice(1), {
