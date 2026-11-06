@@ -1,14 +1,112 @@
 generator client {
- provider = "prisma-client"
- output = "../apps/api/src/generated/prisma"
+  provider = "prisma-client"
+  output = "../apps/api/src/generated/prisma"
 }
 datasource db {
- provider = "postgresql"
+  provider = "postgresql"
 }
 model Session {
- sid String @id @db.VarChar
- sess Json @db.Json
- expire DateTime @db.Timestamp(6)
- @@index([expire], map: "IDX_session_expire")
- @@map("session")
+  sid String @id @db.VarChar
+  sess Json @db.Json
+  expire DateTime @db.Timestamp(6)
+  @@index([expire], map: "IDX_session_expire")
+  @@map("session")
+}
+enum Role {
+  OWNER
+  CLIENT
+}
+enum ActivityKind {
+  INVITATION_CREATED
+  INVITATION_REVOKED
+  INVITATION_ACCEPTED
+  INVITATION_DELIVERY_FAILED
+  MEMBERSHIP_ACTIVATED
+  MEMBERSHIP_REVOKED
+}
+model User {
+  id String @id @default(uuid()) @db.Uuid
+  email String @unique
+  name String
+  passwordHash String @map("password_hash")
+  role Role @default(CLIENT)
+  disabledAt DateTime? @map("disabled_at") @db.Timestamptz(6)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  memberships Membership[]
+  invitations Invitation[]
+  activities ActivityEvent[]
+  @@map("users")
+}
+model Organization {
+  id String @id @default(uuid()) @db.Uuid
+  name String
+  notes String @default("")
+  archivedAt DateTime? @map("archived_at") @db.Timestamptz(6)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  contacts Contact[]
+  memberships Membership[]
+  invitations Invitation[]
+  activities ActivityEvent[]
+  @@index([createdAt, id])
+  @@map("organizations")
+}
+model Contact {
+  id String @id @default(uuid()) @db.Uuid
+  organizationId String @map("organization_id") @db.Uuid
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  name String
+  email String
+  archivedAt DateTime? @map("archived_at") @db.Timestamptz(6)
+  @@unique([organizationId, email])
+  @@map("contacts")
+}
+model Membership {
+  id String @id @default(uuid()) @db.Uuid
+  organizationId String @map("organization_id") @db.Uuid
+  userId String @map("user_id") @db.Uuid
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  revokedAt DateTime? @map("revoked_at") @db.Timestamptz(6)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  @@unique([organizationId, userId])
+  @@index([userId, revokedAt])
+  @@map("memberships")
+}
+model Invitation {
+  id String @id @default(uuid()) @db.Uuid
+  organizationId String @map("organization_id") @db.Uuid
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  email String
+  tokenHash String @unique @map("token_hash")
+  invitedBy String @map("invited_by") @db.Uuid
+  inviter User @relation(fields: [invitedBy], references: [id], onDelete: Restrict)
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(6)
+  acceptedAt DateTime? @map("accepted_at") @db.Timestamptz(6)
+  revokedAt DateTime? @map("revoked_at") @db.Timestamptz(6)
+  deliveredAt DateTime? @map("delivered_at") @db.Timestamptz(6)
+  deliveryFailed Boolean @default(false) @map("delivery_failed")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  @@index([organizationId, email])
+  @@index([invitedBy])
+  @@map("invitations")
+}
+model ActivityEvent {
+  id String @id @default(uuid()) @db.Uuid
+  organizationId String @map("organization_id") @db.Uuid
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  actorId String @map("actor_id") @db.Uuid
+  actor User @relation(fields: [actorId], references: [id], onDelete: Restrict)
+  kind ActivityKind
+  targetId String @map("target_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  @@index([organizationId, createdAt])
+  @@index([actorId])
+  @@map("activity_events")
+}
+model AuthThrottle {
+  key String @id
+  count Int
+  resetAt DateTime @map("reset_at") @db.Timestamptz(6)
+  @@index([resetAt])
+  @@map("auth_throttles")
 }

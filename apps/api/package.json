@@ -10,12 +10,16 @@
   },
   "dependencies": {
     "@jcb/contracts": "*",
-    "express": "5.3.0",
-    "helmet": "8.3.0",
-    "express-session": "1.19.0",
-    "connect-pg-simple": "10.0.0",
-    "pg": "8.23.1",
+    "@prisma/adapter-pg": "7.10.1",
     "@prisma/client": "7.10.1",
-    "@prisma/adapter-pg": "7.10.1"
+    "argon2": "0.45.2",
+    "connect-pg-simple": "10.0.0",
+    "express": "5.3.0",
+    "express-session": "1.19.0",
+    "helmet": "8.3.0",
+    "nodemailer": "10.3.1",
+    "passport": "0.7.0",
+    "passport-local": "1.0.0",
+    "pg": "8.23.1"
   }
 }
