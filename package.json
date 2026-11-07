@@ -22,6 +22,7 @@
     "test:integration": "tsx scripts/integration.ts",
     "db:generate": "prisma generate",
     "db:migrate": "tsx scripts/database.ts migrate",
+    "staging:migrate": "tsx scripts/staging-migrate.ts",
     "db:seed": "tsx scripts/database.ts seed",
     "predev": "npm run build -w @jcb/contracts",
     "owner:create": "npm run build -w @jcb/contracts && tsx scripts/owner.ts",

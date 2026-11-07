@@ -5,6 +5,7 @@ const schema = z.object({
     .default('development'),
   PORT: z.coerce.number().int().min(1).max(65535).default(3000),
   LISTEN_HOST: z.literal('127.0.0.1').optional(),
+  TRUST_PROXY: z.enum(['off', 'render-edge']).default('off'),
   APP_ORIGIN: z.string().url(),
   DATABASE_URL: z
     .string()
@@ -34,6 +35,26 @@ export function readConfig(env: NodeJS.ProcessEnv) {
     throw new Error(
       'APP_ORIGIN must be an exact origin; production requires HTTPS.',
     )
+  if (
+    result.data.TRUST_PROXY === 'render-edge' &&
+    (env.RENDER !== 'true' || result.data.NODE_ENV !== 'production')
+  )
+    throw new Error(
+      'Render proxy trust requires the production Render environment.',
+    )
+  if (result.data.NODE_ENV === 'production') {
+    const db = new URL(result.data.DATABASE_URL)
+    if (
+      db.searchParams.get('sslmode') !== 'verify-full' ||
+      [...db.searchParams.keys()].some(
+        (key) => !['sslmode', 'application_name'].includes(key),
+      ) ||
+      db.searchParams.getAll('sslmode').length !== 1
+    )
+      throw new Error(
+        'Production database requires verified TLS without connection overrides.',
+      )
+  }
   return result.data
 }
 export type Config = ReturnType<typeof readConfig>
