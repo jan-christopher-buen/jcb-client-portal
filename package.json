@@ -27,7 +27,8 @@
     "owner:create": "npm run build -w @jcb/contracts && tsx scripts/owner.ts",
     "mail:dev": "tsx scripts/mail-sink.ts",
     "pretest": "npm run build -w @jcb/contracts",
-    "pretest:integration": "npm run build -w @jcb/contracts"
+    "pretest:integration": "npm run build -w @jcb/contracts",
+    "test:ui": "node --test apps/web/tests/change-offer.ui.mjs"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
