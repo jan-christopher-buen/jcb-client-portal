@@ -45,7 +45,7 @@ before(async () => {
   )
   for (let attempt = 0; ; attempt++) {
     try {
-      if ((await fetch(base)).ok) break
+      if ((await fetch(base, { signal: AbortSignal.timeout(1000) })).ok) break
     } catch {
       /* Wait for local Vite. */
     }
@@ -55,11 +55,24 @@ before(async () => {
   browser = await chromium.launch({
     executablePath: process.env.JCB_BROWSER_EXECUTABLE,
     headless: true,
+    timeout: 20000,
   })
 })
 after(async () => {
-  await browser?.close()
-  server?.kill('SIGTERM')
+  try {
+    await browser?.close()
+  } finally {
+    if (server && server.exitCode === null && server.signalCode === null) {
+      const exited = new Promise((resolve) => server.once('exit', resolve))
+      const forceKill = setTimeout(() => server.kill('SIGKILL'), 3000)
+      server.kill('SIGTERM')
+      try {
+        await exited
+      } finally {
+        clearTimeout(forceKill)
+      }
+    }
+  }
 })
 async function fixture(role = 'OWNER') {
   const context = await browser.newContext(),
