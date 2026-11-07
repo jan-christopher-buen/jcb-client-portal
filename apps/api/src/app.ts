@@ -1,6 +1,7 @@
 import express, { type ErrorRequestHandler } from 'express'
 import helmet from 'helmet'
 import session from 'express-session'
+import { boundedJson } from './payloads.js'
 import { sessionStore } from './auth/session-store.js'
 import type { Pool } from 'pg'
 import { existsSync } from 'node:fs'
@@ -42,7 +43,7 @@ export function createApp(
       },
     }),
   )
-  app.use(express.json({ limit: '16kb' }))
+  app.use(boundedJson)
   app.get('/health', (_req, res) => {
     res.json({ status: 'ok' })
   })
