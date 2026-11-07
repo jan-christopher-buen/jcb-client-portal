@@ -157,3 +157,19 @@ Private uploads/storage, billing/payment collection, AI, external email delivery
 Production invitation delivery is disabled. Hosting, budget, HTTPS and exact proxy trust, backup/restore, retention, and production abuse controls remain deployment gates. No staging deployment or public demo is available, and no production readiness is claimed.
 
 JSON requests have explicit bounded budgets: 640 KiB for proposal endpoints, 128 KiB for other organization endpoints, and 16 KiB elsewhere, including authentication and invitation acceptance. Existing field limits still apply; supported maximum content fits with UTF-8 or escaped JSON. Oversized requests return a safe 413 error. See [request boundaries](docs/architecture/008-request-boundaries.md). Logout also prevents delayed saves of loaded sessions from recreating deleted authentication; it does not cancel requests already authorized before logout.
+
+Offer-editor recovery keeps local scope, exclusions, PHP adjustment and schedule input while reloading. After a failed/stale save, owners compare the latest server values and explicitly reconcile or confirm discard before retrying. Unwritable or unverified state blocks saving. This protects the mounted editor; it does not persist drafts across refresh, session expiry or browser termination.
+
+The opt-in offer/deliverable/handover UI regression suites run in a real Chromium browser with fictional HTTP fixtures and no database. They require an existing external Playwright installation and Chromium executable; no browser packages are added to application dependencies:
+
+```bash
+JCB_PLAYWRIGHT_MODULE=/absolute/path/to/playwright/index.mjs \
+JCB_BROWSER_EXECUTABLE=/absolute/path/to/chromium \
+npm run test:ui
+```
+
+The suites run sequentially, starting loopback Vite servers on ports 5197, 5198 and 5199. They are separate from `npm test` and are not currently executed by remote CI. Real-API two-tab verification is a separate local check.
+
+Deliverable content and new-draft forms retain title, description and added/removed links through reloads and refresh failures. New drafts also retain required flag and chosen order. Stale updates require explicit latest-version reconciliation; confirmed discard loads observed server values. Failed creation shows occupied slots and requires an intentional unused-slot retry. Published/inaccessible or otherwise unwritable state blocks saves while retaining input. Recovery is in-memory and does not guarantee survival of refresh, session expiry or forced browser exit.
+
+Handover checklist recovery retains each task editor, edit/action reasons and the new-task form independently during same-project reloads, activity pagination and sibling actions. Stale edits and check/uncheck targets require explicit latest-state review; confirmed discard replaces only the selected editor. Successful submissions clear only their own reasons/form. Refresh errors and held/cancelled/completed state block writes while keeping local input. This remains browser memory, not durable autosave.
