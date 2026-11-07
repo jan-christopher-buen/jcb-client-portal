@@ -30,7 +30,7 @@
     "pretest:integration": "npm run build -w @jcb/contracts",
     "demo:seed": "npm run db:generate && npm run build -w @jcb/contracts && tsx scripts/demo.ts seed",
     "demo:dev": "npm run build -w @jcb/contracts && tsx scripts/demo.ts dev",
-    "test:ui": "node --test --test-concurrency=1 apps/web/tests/*.ui.mjs"
+    "test:ui": "node --test --test-concurrency=1 --test-timeout=60000 apps/web/tests/*.ui.mjs"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

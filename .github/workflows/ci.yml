@@ -34,3 +34,38 @@ jobs:
       - run: npm test
       - run: npm run test:integration
       - run: npm run build
+  ui:
+    name: Browser UI regressions
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run build -w @jcb/contracts
+      - name: Install isolated Playwright and Chromium
+        timeout-minutes: 5
+        run: |
+          browser_root="$(mktemp -d "$RUNNER_TEMP/jcb-browser-ui.XXXXXX")"
+          echo "JCB_BROWSER_TOOL_ROOT=$browser_root" >> "$GITHUB_ENV"
+          export PLAYWRIGHT_BROWSERS_PATH="$browser_root/browsers"
+          npm install --prefix "$browser_root/tooling" --no-save --package-lock=false --ignore-scripts playwright@1.64.0
+          node "$browser_root/tooling/node_modules/playwright/cli.js" install --with-deps --no-shell chromium
+          export JCB_PLAYWRIGHT_MODULE="$browser_root/tooling/node_modules/playwright/index.mjs"
+          echo "JCB_PLAYWRIGHT_MODULE=$JCB_PLAYWRIGHT_MODULE" >> "$GITHUB_ENV"
+          echo "PLAYWRIGHT_BROWSERS_PATH=$PLAYWRIGHT_BROWSERS_PATH" >> "$GITHUB_ENV"
+          node --input-type=module -e 'import { pathToFileURL } from "node:url"; const { chromium } = await import(pathToFileURL(process.env.JCB_PLAYWRIGHT_MODULE)); console.log("JCB_BROWSER_EXECUTABLE=" + chromium.executablePath())' >> "$GITHUB_ENV"
+      - name: Run all 48 UI regressions sequentially
+        timeout-minutes: 8
+        run: npm run test:ui
+      - name: Remove isolated browser tooling
+        if: always()
+        run: |
+          case "${JCB_BROWSER_TOOL_ROOT:-}" in
+            "$RUNNER_TEMP"/jcb-browser-ui.*) rm -rf -- "$JCB_BROWSER_TOOL_ROOT" ;;
+            "") ;;
+            *) echo "Unexpected browser tooling path" >&2; exit 1 ;;
+          esac

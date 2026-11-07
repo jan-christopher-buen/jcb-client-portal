@@ -168,7 +168,7 @@ JCB_BROWSER_EXECUTABLE=/absolute/path/to/chromium \
 npm run test:ui
 ```
 
-The suites run sequentially, starting loopback Vite servers on ports 5197, 5198 and 5199. They are separate from `npm test` and are not currently executed by remote CI. Real-API two-tab verification is a separate local check.
+The suites run sequentially, starting loopback Vite servers on ports 5197, 5198 and 5199. They are separate from `npm test`; GitHub Actions runs them in a dedicated browser job. See [browser UI test setup](docs/development/browser-ui-tests.md) for the pinned, isolated CI setup and local reproduction. Real-API two-tab verification is a separate local check.
 
 Deliverable content and new-draft forms retain title, description and added/removed links through reloads and refresh failures. New drafts also retain required flag and chosen order. Stale updates require explicit latest-version reconciliation; confirmed discard loads observed server values. Failed creation shows occupied slots and requires an intentional unused-slot retry. Published/inaccessible or otherwise unwritable state blocks saves while retaining input. Recovery is in-memory and does not guarantee survival of refresh, session expiry or forced browser exit.
 
