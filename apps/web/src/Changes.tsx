@@ -664,63 +664,108 @@ export function ChangeDetail() {
 export function ChangeOfferEditor() {
   const { orgId, projectId, requestId, offerId } = useParams(),
     path = `/organizations/${orgId}/projects/${projectId}/changes/${requestId}`
-  const resource = useResource<ChangeDetailDto>(path),
+  const resource = useResource<ChangeDetailDto>(path, {
+      retainDataOnReload: true,
+    }),
     offer = resource.data?.request.offers.find((o) => o.id === offerId)
+  const unavailable = resource.error
+    ? 'The latest state could not be verified. Reload successfully before saving.'
+    : !offer
+      ? 'This offer is no longer accessible in this request.'
+      : offer.state !== 'DRAFT'
+        ? `This offer is ${label(offer.state)} and cannot be edited.`
+        : ['APPROVED', 'IMPLEMENTED', 'CLOSED'].includes(
+              resource.data?.request.state ?? '',
+            )
+          ? `This request is ${label(resource.data!.request.state)}; its offers cannot be edited.`
+          : ['ON_HOLD', 'CANCELLED', 'COMPLETED'].includes(
+                resource.data?.project.status ?? '',
+              )
+            ? `This project is ${label(resource.data!.project.status)}. Workflow changes are unavailable.`
+            : ''
   return (
     <>
       <Link to={`${path}?offer=${offerId}`}>← Change request review</Link>
       <h1>Offer editor</h1>
-      <Failure error={resource.error} reload={resource.reload} />
-      {resource.loading ? (
-        <p role="status">Loading offer editor…</p>
-      ) : (
-        resource.data &&
-        (offer?.state === 'DRAFT' &&
-        !['APPROVED', 'IMPLEMENTED', 'CLOSED'].includes(
-          resource.data.request.state,
-        ) &&
-        !['ON_HOLD', 'CANCELLED', 'COMPLETED'].includes(
-          resource.data.project.status,
-        ) ? (
-          <OfferForm
-            key={offer.id}
-            offer={offer}
-            path={path}
-            reload={resource.reload}
-          />
-        ) : (
-          <p role="alert">
-            Editable offer unavailable. Published/approved offers are locked;
-            held/cancelled/completed projects cannot change.
-          </p>
-        ))
+      <Failure
+        error={!resource.data ? resource.error : ''}
+        reload={resource.reload}
+      />
+      {resource.loading && (
+        <p role="status">Loading offer editor… Local input is retained.</p>
+      )}
+      {resource.data && (
+        <OfferForm
+          key={`${path}/${offerId}`}
+          offer={offer}
+          path={path}
+          reload={resource.reload}
+          loading={resource.loading}
+          unavailable={unavailable}
+        />
       )}
     </>
   )
+}
+function offerPrice(minor: string) {
+  const amount = BigInt(minor),
+    abs = amount < 0n ? -amount : amount
+  return `${amount < 0n ? '-' : ''}${abs / 100n}.${String(abs % 100n).padStart(2, '0')}`
 }
 function OfferForm({
   offer,
   path,
   reload,
+  loading,
+  unavailable,
 }: {
-  offer: ChangeOfferDto
+  offer: ChangeOfferDto | undefined
   path: string
   reload: () => void
+  loading: boolean
+  unavailable: string
 }) {
   const navigate = useNavigate(),
     pending = useRef(false),
     saved = useRef(false)
-  const [scope, setScope] = useState(offer.scope),
-    [exclusions, setExclusions] = useState(offer.exclusions),
-    [schedule, setSchedule] = useState(offer.scheduleImpact),
-    [price, setPrice] = useState(() => {
-      const amount = BigInt(offer.adjustmentMinor),
-        abs = amount < 0n ? -amount : amount
-      return `${amount < 0n ? '-' : ''}${abs / 100n}.${String(abs % 100n).padStart(2, '0')}`
-    }),
+  const [scope, setScope] = useState(offer?.scope ?? ''),
+    [exclusions, setExclusions] = useState(offer?.exclusions ?? ''),
+    [schedule, setSchedule] = useState(offer?.scheduleImpact ?? ''),
+    [price, setPrice] = useState(() =>
+      offerPrice(offer?.adjustmentMinor ?? '0'),
+    ),
+    [revision, setRevision] = useState(offer?.revision),
+    [failedOffer, setFailedOffer] = useState<ChangeOfferDto | null>(null),
     [dirty, setDirty] = useState(false),
     [busy, setBusy] = useState(false),
     [error, setError] = useState('')
+  const reviewRequired = !!failedOffer || offer?.revision !== revision
+  const canReview =
+    !!offer &&
+    !loading &&
+    !unavailable &&
+    (!failedOffer || offer !== failedOffer)
+  const blocked = busy || loading || !!unavailable || reviewRequired || !offer
+  function reconcile(discard: boolean) {
+    if (!offer || !canReview || pending.current) return
+    if (discard) {
+      if (
+        dirty &&
+        !window.confirm(
+          'Discard your local offer edits and load the latest server values?',
+        )
+      )
+        return
+      setScope(offer.scope)
+      setExclusions(offer.exclusions)
+      setPrice(offerPrice(offer.adjustmentMinor))
+      setSchedule(offer.scheduleImpact)
+      setDirty(false)
+    }
+    setRevision(offer.revision)
+    setFailedOffer(null)
+    setError('')
+  }
   const blocker = useBlocker(() => dirty && !saved.current)
   useEffect(() => {
     const before = (e: BeforeUnloadEvent) => {
@@ -734,7 +779,7 @@ function OfferForm({
   }, [dirty])
   async function save(e: FormEvent) {
     e.preventDefault()
-    if (pending.current) return
+    if (pending.current || blocked || !offer) return
     setError('')
     try {
       let adjustmentMinor: string
@@ -763,12 +808,13 @@ function OfferForm({
       setBusy(true)
       await api(`${path}/offers/${offer.id}`, 'PATCH', {
         ...input,
-        expectedRevision: offer.revision,
+        expectedRevision: revision,
       })
       saved.current = true
       setDirty(false)
       navigate(`${path}?offer=${offer.id}`)
     } catch (e) {
+      setFailedOffer(offer)
       setError(errorMessage(e))
     } finally {
       pending.current = false
@@ -789,10 +835,63 @@ function OfferForm({
         </section>
       )}
       <p>
-        Offer draft v{offer.number}. Saving does not publish or invalidate the
-        current offer.
+        Offer draft v{offer?.number ?? 'unavailable'}. Saving does not publish
+        or invalidate the current offer.
       </p>
       <Failure error={error} reload={reload} />
+      {unavailable && (
+        <p role="alert">{unavailable} Your local input is retained.</p>
+      )}
+      {reviewRequired && (
+        <section
+          className={styles.notice}
+          aria-label="Review latest server offer"
+        >
+          <h2>Review the latest server state before saving again</h2>
+          <p>
+            Your local edits have not been replaced. Reload, compare all fields
+            below, then intentionally keep/reconcile your edits or discard them.
+            Keeping edits replaces these server values on the next save.
+          </p>
+          {offer && canReview ? (
+            <>
+              <p>Latest server revision: {offer.revision}</p>
+              <h3>Latest offered scope</h3>
+              <p className={styles.prose}>{offer.scope}</p>
+              <h3>Latest exclusions</h3>
+              <p className={styles.prose}>
+                {offer.exclusions || 'None stated.'}
+              </p>
+              <p>
+                Latest price adjustment:{' '}
+                {formatSignedPhp(offer.adjustmentMinor)}
+              </p>
+              <h3>Latest schedule impact</h3>
+              <p className={styles.prose}>{offer.scheduleImpact}</p>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => reconcile(false)}
+              >
+                Keep my edits against revision {offer.revision}
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => reconcile(true)}
+              >
+                Discard my edits and use latest
+              </button>
+            </>
+          ) : (
+            <p>
+              Reload successfully to review an editable server draft. Saving is
+              disabled.
+            </p>
+          )}
+        </section>
+      )}
+
       <form
         className={styles.panel}
         onSubmit={(e) => void save(e)}
@@ -839,7 +938,7 @@ function OfferForm({
           <p>
             Describe the impact explicitly. Approval never shifts saved dates.
           </p>
-          <button className={styles.submit} disabled={busy}>
+          <button className={styles.submit} disabled={blocked}>
             {busy ? 'Saving…' : 'Save offer draft'}
           </button>
         </fieldset>

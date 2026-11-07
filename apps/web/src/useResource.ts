@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react'
 import { api, errorMessage } from './api.js'
-export function useResource<T>(path: string) {
+export function useResource<T>(
+  path: string,
+  { retainDataOnReload = false }: { retainDataOnReload?: boolean } = {},
+) {
   const [attempt, setAttempt] = useState(0)
   const [state, setState] = useState<{
     path: string
@@ -16,17 +19,20 @@ export function useResource<T>(path: string) {
       })
       .catch((error) => {
         if (live)
-          setState({
+          setState((previous) => ({
             path,
-            data: null,
+            data:
+              retainDataOnReload && previous.path === path
+                ? previous.data
+                : null,
             error: errorMessage(error),
             loading: false,
-          })
+          }))
       })
     return () => {
       live = false
     }
-  }, [path, attempt])
+  }, [path, attempt, retainDataOnReload])
   return {
     data: state.path === path ? state.data : null,
     error: state.path === path ? state.error : '',
