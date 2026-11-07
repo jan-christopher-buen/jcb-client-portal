@@ -5,17 +5,20 @@ services:
     name: jcb-client-portal-staging
     runtime: node
     plan: free
+    region: singapore
     branch: main
     autoDeployTrigger: 'off'
-    buildCommand: npm ci --include=dev && npm run build
-    startCommand: npm start
+    buildCommand: node scripts/check-staging-release.mjs && npm ci --include=dev && npm run build
+    startCommand: APP_ORIGIN="$RENDER_EXTERNAL_URL" npm start
     healthCheckPath: /health
     envVars:
       - key: NODE_ENV
         value: production
       - key: TRUST_PROXY
         value: render-edge
-      - key: APP_ORIGIN
+      - key: SKIP_INSTALL_DEPS
+        value: 'true'
+      - key: JCB_RELEASE_SHA
         sync: false
       - key: DATABASE_URL
         sync: false
