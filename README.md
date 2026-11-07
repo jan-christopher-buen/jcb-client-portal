@@ -154,7 +154,7 @@ JSON requests have explicit bounded budgets: 640 KiB for proposal endpoints, 128
 
 Offer-editor recovery keeps local scope, exclusions, PHP adjustment and schedule input while reloading. After a failed/stale save, owners compare the latest server values and explicitly reconcile or confirm discard before retrying. Unwritable or unverified state blocks saving. This protects the mounted editor; it does not persist drafts across refresh, session expiry or browser termination.
 
-The opt-in offer-editor UI regression suite runs in a real Chromium browser with fictional HTTP fixtures and no database. It requires an existing external Playwright installation and Chromium executable; no browser packages are added to application dependencies:
+The opt-in offer/deliverable-editor UI regression suites run in a real Chromium browser with fictional HTTP fixtures and no database. They require an existing external Playwright installation and Chromium executable; no browser packages are added to application dependencies:
 
 ```bash
 JCB_PLAYWRIGHT_MODULE=/absolute/path/to/playwright/index.mjs \
@@ -162,4 +162,6 @@ JCB_BROWSER_EXECUTABLE=/absolute/path/to/chromium \
 npm run test:ui
 ```
 
-The suite starts its own loopback Vite server on port 5197. It is separate from `npm test` and is not currently executed by remote CI. Real-API two-tab verification is a separate local check.
+The suites run sequentially, starting loopback Vite servers on ports 5197 and 5198. They are separate from `npm test` and are not currently executed by remote CI. Real-API two-tab verification is a separate local check.
+
+Deliverable content and new-draft forms retain title, description and added/removed links through reloads and refresh failures. New drafts also retain required flag and chosen order. Stale updates require explicit latest-version reconciliation; confirmed discard loads observed server values. Failed creation shows occupied slots and requires an intentional unused-slot retry. Published/inaccessible or otherwise unwritable state blocks saves while retaining input. Recovery is in-memory and does not guarantee survival of refresh, session expiry or forced browser exit.
