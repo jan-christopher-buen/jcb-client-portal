@@ -722,3 +722,64 @@ describe('decisions, projects and transaction invariants', () => {
     expect((await decide(client, p)).status).toBe(200)
   })
 })
+
+describe('proposal HTTP payload boundaries', () => {
+  it.each(['unicode', 'escaped', 'worst-case'])(
+    'creates and updates maximum proposal content (%s)',
+    async (encoding) => {
+      const text = (length: number) =>
+        (encoding === 'worst-case' ? '\u0001' : '漢😀\u0001"\\')
+          .repeat(length)
+          .slice(0, length - 1) + 'x'
+      const input = {
+        title: text(120),
+        scope: text(12000),
+        exclusions: text(12000),
+        deliveryAssumptions: text(12000),
+        internalNotes: text(4000),
+        currency: 'PHP',
+        items: Array.from({ length: 100 }, () => ({
+          description: text(500),
+          quantity: 1000,
+          unitPriceMinor: '1000000000000',
+        })),
+      }
+      const wire = (body: object) => {
+        const json = JSON.stringify(body)
+        return encoding === 'escaped'
+          ? json.replace(
+              /[\u007f-\uffff]/g,
+              (v) => '\\u' + v.charCodeAt(0).toString(16).padStart(4, '0'),
+            )
+          : json
+      }
+      const token = await csrf(own)
+      expect(Buffer.byteLength(wire(input))).toBeGreaterThan(16 * 1024)
+      const created = await own
+        .post(base())
+        .set('Origin', origin)
+        .set('X-CSRF-Token', token)
+        .type('json')
+        .send(wire(input))
+      expect(created.status).toBe(201)
+      const path = `${base()}/${created.body.proposalId}/versions/${created.body.versionId}`
+      const updated = await own
+        .patch(path)
+        .set('Origin', origin)
+        .set('X-CSRF-Token', token)
+        .type('json')
+        .send(
+          wire({
+            ...input,
+            title: 'Updated ' + text(112),
+            expectedRevision: 0,
+          }),
+        )
+      expect(updated.status).toBe(200)
+      const stored = await read(created.body)
+      expect(stored.versions[0]!.scope).toBe(input.scope)
+      expect(stored.versions[0]!.items).toEqual(input.items)
+      expect(stored.versions[0]!.totalMinor).toBe('100000000000000000')
+    },
+  )
+})

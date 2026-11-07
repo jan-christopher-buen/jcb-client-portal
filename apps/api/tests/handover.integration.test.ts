@@ -1249,3 +1249,128 @@ describe(
     })
   },
 )
+
+describe('later-module HTTP payload boundaries', () => {
+  it('persists maximum escaped organization, milestone, change, offer, deliverable and handover inputs', async () => {
+    const text = (n: number) => '漢'.repeat(n)
+    const escaped = (body: object) =>
+      JSON.stringify(body).replace(
+        /[\u007f-\uffff]/g,
+        (v) => '\\u' + v.charCodeAt(0).toString(16).padStart(4, '0'),
+      )
+    const write = async (
+      agent: Agent,
+      method: 'post' | 'patch',
+      path: string,
+      body: object,
+      status: number,
+    ) => {
+      const result = await agent[method](path)
+        .set('Origin', origin)
+        .set('X-CSRF-Token', await csrf(agent))
+        .type('json')
+        .send(escaped(body))
+      expect(result.status, path).toBe(status)
+      return result.body
+    }
+    await write(
+      own,
+      'patch',
+      `/api/organizations/${orgA}`,
+      { notes: text(4000) },
+      200,
+    )
+    expect(
+      (await own.get(`/api/organizations/${orgA}`)).body.organization.notes,
+    ).toBe(text(4000))
+    const pid = await project(),
+      path = projectBase(pid)
+    await write(
+      own,
+      'post',
+      `${path}/milestones`,
+      {
+        title: text(120),
+        description: text(12000),
+        dueDate: null,
+        required: true,
+        position: 1,
+      },
+      201,
+    )
+    expect(
+      (await own.get(`${path}/workflow`)).body.milestones[0].description,
+    ).toBe(text(12000))
+    const r = await write(
+      client,
+      'post',
+      `${path}/changes`,
+      {
+        title: text(120),
+        requestedChange: text(8000),
+        businessContext: text(4000),
+      },
+      201,
+    )
+    const rid = r.requestId as string
+    await write(
+      own,
+      'post',
+      `${path}/changes/${rid}/messages`,
+      { kind: 'CLARIFICATION', body: text(4000), expectedRevision: 0 },
+      201,
+    )
+    const oid = await offer(pid, rid)
+    await write(
+      own,
+      'patch',
+      `${path}/changes/${rid}/offers/${oid}`,
+      {
+        scope: text(8000),
+        exclusions: text(4000),
+        scheduleImpact: text(2000),
+        adjustmentMinor: '-1',
+        expectedRevision: 0,
+      },
+      200,
+    )
+    expect((await changeDetail(pid, rid)).request.offers[0].scope).toBe(
+      text(8000),
+    )
+    const d = await write(
+      own,
+      'post',
+      `${path}/deliverables`,
+      {
+        title: text(120),
+        description: text(8000),
+        required: true,
+        position: 1,
+        links: Array.from({ length: 5 }, () => ({
+          label: text(120),
+          url: 'https://example.com/' + 'x'.repeat(980),
+        })),
+      },
+      201,
+    )
+    expect(
+      (await detail(pid, d.deliverableId)).deliverable.versions[0]!.description,
+    ).toBe(text(8000))
+    await write(
+      own,
+      'post',
+      `${path}/handover/items`,
+      {
+        title: text(120),
+        description: text(4000),
+        required: true,
+        clientVisible: true,
+        position: 1,
+      },
+      201,
+    )
+    expect((await own.get(`${path}/handover`)).body.items[0].description).toBe(
+      text(4000),
+    )
+  })
+})
