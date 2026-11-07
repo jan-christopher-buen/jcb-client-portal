@@ -77,7 +77,8 @@ export function authentication(db: PrismaClient, config: Config) {
   })
   const router = Router()
   router.get('/csrf', (req, res, next) => {
-    req.session.csrf ??= issueCsrf()
+    if (req.session.csrf) return res.json({ token: req.session.csrf })
+    req.session.csrf = issueCsrf()
     req.session.save((error) =>
       error ? next(error) : res.json({ token: req.session.csrf }),
     )

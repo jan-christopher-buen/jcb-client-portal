@@ -1,7 +1,8 @@
 import express, { type ErrorRequestHandler } from 'express'
 import helmet from 'helmet'
 import session from 'express-session'
-import connectPgSimple from 'connect-pg-simple'
+import { boundedJson } from './payloads.js'
+import { sessionStore } from './auth/session-store.js'
 import type { Pool } from 'pg'
 import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -42,16 +43,11 @@ export function createApp(
       },
     }),
   )
-  app.use(express.json({ limit: '16kb' }))
+  app.use(boundedJson)
   app.get('/health', (_req, res) => {
     res.json({ status: 'ok' })
   })
-  const PgStore = connectPgSimple(session)
-  const store = new PgStore({
-    pool,
-    createTableIfMissing: false,
-    errorLog: () => console.error('Session storage operation failed'),
-  })
+  const { store, trackGeneration } = sessionStore(pool)
   const sessionMiddleware = session({
     name: 'jcb.sid',
     store,
@@ -66,6 +62,7 @@ export function createApp(
       path: '/',
     },
   })
+  trackGeneration()
   app.use(
     '/api',
     (_req, res, next) => {

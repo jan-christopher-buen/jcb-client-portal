@@ -2,6 +2,7 @@ import { afterAll, describe, expect, it } from 'vitest'
 import request from 'supertest'
 import { Pool } from 'pg'
 import { createApp } from '../src/app.js'
+import { JSON_LIMITS } from '../src/payloads.js'
 import { readConfig } from '../src/config.js'
 const config = readConfig({
   APP_ORIGIN: 'http://localhost:5173',
@@ -52,4 +53,30 @@ describe('public foundation', () => {
     })
     expect((await request(app).get('/api/unknown')).status).toBe(404)
   })
+})
+
+it.each([
+  ['/api/auth/login', JSON_LIMITS.small],
+  ['/api/invitations/accept', JSON_LIMITS.small],
+  ['/api/organizations', JSON_LIMITS.organization],
+  [
+    '/api/organizations/example/projects/example/deliverables',
+    JSON_LIMITS.organization,
+  ],
+  ['/api/organizations/example/proposals', JSON_LIMITS.proposal],
+])('rejects oversized JSON safely at %s', async (path, limit) => {
+  const response = await request(app)
+    .post(path)
+    .type('json')
+    .send(
+      JSON.stringify({
+        privateMarker: 'DO_NOT_ECHO',
+        padding: 'x'.repeat(limit),
+      }),
+    )
+  expect(response.status).toBe(413)
+  expect(response.body).toEqual({
+    error: { code: 'PAYLOAD_TOO_LARGE', message: 'Request body is too large.' },
+  })
+  expect(response.headers['set-cookie']).toBeUndefined()
 })
