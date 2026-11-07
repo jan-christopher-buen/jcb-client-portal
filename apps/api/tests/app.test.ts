@@ -80,3 +80,26 @@ it.each([
   })
   expect(response.headers['set-cookie']).toBeUndefined()
 })
+
+it('trusts only the immediate ingress when Render edge policy is selected', async () => {
+  const edge = createApp({ ...config, TRUST_PROXY: 'render-edge' }, pool)
+  try {
+    expect(app.get('trust proxy')).toBe(false)
+    const trust = edge.app.get('trust proxy fn') as (
+      ip: string,
+      hop: number,
+    ) => boolean
+    expect(trust('203.0.113.10', 0)).toBe(true)
+    expect(trust('203.0.113.10', 1)).toBe(false)
+    expect(trust('203.0.113.10', 2)).toBe(false)
+    const response = await request(edge.app)
+      .get('/api/auth/me')
+      .set('X-Forwarded-For', '127.0.0.1, 203.0.113.10')
+      .set('X-Forwarded-Proto', 'https')
+    expect(response.status).toBe(401)
+    expect(response.headers['set-cookie']).toBeUndefined()
+  } finally {
+    edge.store.close()
+    await edge.db.$disconnect()
+  }
+})

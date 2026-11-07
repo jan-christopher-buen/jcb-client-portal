@@ -31,8 +31,9 @@ export function createApp(
   const auth = authentication(db, config)
   const app = express()
   app.disable('x-powered-by')
-  // Direct connection only. Set an exact trusted proxy policy after host selection.
-  app.set('trust proxy', false)
+  // Trust only the immediate Render ingress, never every forwarded hop.
+  // Further edge hops remain untrusted; req.ip may identify a shared proxy.
+  app.set('trust proxy', config.TRUST_PROXY === 'render-edge' ? 1 : false)
   app.use(
     helmet({
       referrerPolicy: { policy: 'no-referrer' },

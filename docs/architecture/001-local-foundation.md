@@ -22,7 +22,7 @@ Alternatives deferred: Next.js adds an unnecessary framework change; separate fr
 
 Sessions use PostgreSQL, HttpOnly host-only cookies, SameSite=Lax and an eight-hour expiry; Secure is enabled in production. Anonymous reads do not create sessions. Secrets are validated and errors omit raw details. Helmet supplies baseline headers. This does not establish completed authentication or tenant isolation.
 
-Proxy trust is explicitly `false`, suitable for direct connections. Before deploying behind a proxy, specify that host's exact trusted proxy addresses/hops and verify HTTPS detection, secure cookies, request IPs and throttling. Do not blindly enable `trust proxy: true`. Production origin must be HTTPS. No staging deployment or production readiness is claimed.
+Proxy trust defaults to `false`, suitable for direct connections. The opt-in immediate Render ingress policy and remaining hosted verification gates are documented in the [staging runbook](../operations/staging.md). Before deploying behind a proxy, specify that host's exact trusted proxy addresses/hops and verify HTTPS detection, secure cookies, request IPs and throttling. Do not blindly enable `trust proxy: true`. Production origin must be HTTPS. No staging deployment or production readiness is claimed.
 
 Local database commands require a loopback host and exact `jcb_portal_dev` name. Integration commands require `TEST_DATABASE_URL`, loopback host, and exact `jcb_portal_test` name; they reject a matching development database. Integration migration runs before session-store tests. No reset/drop command is supplied. Tests delete only their uniquely identified session.
 

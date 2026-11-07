@@ -3,6 +3,7 @@ import { parseArgs } from 'node:util'
 import { createInterface } from 'node:readline/promises'
 import { Writable } from 'node:stream'
 import { emailSchema, nameSchema, passwordSchema } from '@jcb/contracts'
+import { confirmStaging } from './staging-safety.js'
 import { localDatabase } from './database-safety.js'
 import { createDatabase } from '../apps/api/src/database.js'
 import { hashPassword } from '../apps/api/src/auth/password.js'
@@ -37,11 +38,17 @@ async function readPassword() {
 let db: ReturnType<typeof createDatabase> | undefined
 try {
   const { values } = parseArgs({
-    options: { email: { type: 'string' }, name: { type: 'string' } },
+    options: {
+      email: { type: 'string' },
+      name: { type: 'string' },
+      staging: { type: 'boolean', default: false },
+    },
   })
   const email = emailSchema.parse(values.email),
     name = nameSchema.parse(values.name)
-  const url = localDatabase(process.env.DATABASE_URL, 'dev')
+  const url = values.staging
+    ? await confirmStaging(process.env)
+    : localDatabase(process.env.DATABASE_URL, 'dev')
   const passwordHash = await hashPassword(
     passwordSchema.parse(await readPassword()),
   )
@@ -54,7 +61,7 @@ try {
   console.info('Owner created. Sign in with the supplied email and password.')
 } catch {
   console.error(
-    'Owner provisioning failed. Check local database access, unique email/owner, name, and a 12–128 character password. No existing account was upgraded.',
+    'Owner provisioning failed. Check the selected database access, unique email/owner, name, and a 12–128 character password. No existing account was upgraded.',
   )
   process.exitCode = 1
 } finally {
