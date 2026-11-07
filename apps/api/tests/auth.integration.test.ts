@@ -1,5 +1,14 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest'
 import request from 'supertest'
+import type session from 'express-session'
 import { once } from 'node:events'
 import type { Server } from 'node:http'
 import { Pool } from 'pg'
@@ -243,6 +252,85 @@ describe('authentication and session boundaries', () => {
       ).status,
     ).toBe(401)
   })
+  it.each([false, true])(
+    'does not resurrect a loaded CSRF session after logout (missing token: %s)',
+    async (missingToken) => {
+      const client = agent()
+      const signedIn = await post(client, '/api/auth/login', {
+        email: owner.email,
+        password,
+      })
+      expect(signedIn.status).toBe(200)
+      const cookie = firstCookie(signedIn).split(';')[0]!
+      const sid = decodeURIComponent(cookie.split('=').slice(1).join('='))
+        .slice(2)
+        .split('.')[0]!
+      const token = await csrf(client)
+      let loaded!: () => void, release!: () => void
+      const ready = new Promise<void>((resolve) => {
+        loaded = resolve
+      })
+      const gate = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      const get = instance.store.get.bind(instance.store)
+      const getSpy = vi
+        .spyOn(instance.store, 'get')
+        .mockImplementation((id, callback) => {
+          get(id, (error, value) => {
+            // Exercise a genuinely modified loaded session as well as the unchanged path.
+            if (missingToken && id === sid && value) delete value.csrf
+            callback(error, value)
+          })
+        })
+      let saves = 0
+      const spies = (['set', 'touch'] as const).map((method) => {
+        const original = instance.store[method].bind(instance.store)
+        return vi
+          .spyOn(instance.store, method)
+          .mockImplementation(
+            (
+              id: string,
+              value: session.SessionData,
+              callback?: (error?: unknown) => void,
+            ) => {
+              if (id === sid) {
+                if (method === 'set') saves++
+                loaded()
+                void gate.then(() => original(id, value, callback))
+              } else original(id, value, callback)
+            },
+          )
+      })
+      const pending = request(server)
+        .get('/api/auth/csrf')
+        .set('Cookie', cookie)
+        .then((result) => result)
+      try {
+        await ready
+        const logout = await request(secondServer)
+          .post('/api/auth/logout')
+          .set('Cookie', cookie)
+          .set('Origin', origin)
+          .set('X-CSRF-Token', token)
+          .send({})
+        expect(logout.status).toBe(204)
+        expect(await db.session.count({ where: { sid } })).toBe(0)
+      } finally {
+        release()
+        spies.forEach((spy) => spy.mockRestore())
+        getSpy.mockRestore()
+      }
+      expect((await pending).status).toBe(200)
+      expect(saves).toBe(missingToken ? 1 : 0)
+      expect(await db.session.count({ where: { sid } })).toBe(0)
+      expect(
+        (await request(secondServer).get('/api/auth/me').set('Cookie', cookie))
+          .status,
+      ).toBe(401)
+    },
+  )
+
   it('rejects missing/stale/invalid CSRF and missing or wrong origins', async () => {
     const client = await login(owner),
       token = await csrf(client)
