@@ -36,3 +36,24 @@ export function testDatabase(env: NodeJS.ProcessEnv) {
   }
   return value
 }
+
+export function demoDatabase(env: NodeJS.ProcessEnv) {
+  if (env.NODE_ENV !== 'development' || env.JCB_LOCAL_DEMO !== '1')
+    throw new Error(
+      'Demo commands require NODE_ENV=development and JCB_LOCAL_DEMO=1.',
+    )
+  const value = env.DEMO_DATABASE_URL
+  if (!value) throw new Error('Missing DEMO_DATABASE_URL.')
+  const url = databaseUrl(value)
+  if (
+    !['postgres:', 'postgresql:'].includes(url.protocol) ||
+    !['localhost', '127.0.0.1', '[::1]'].includes(url.hostname) ||
+    url.search !== '' ||
+    url.hash !== '' ||
+    decodeURIComponent(url.pathname) !== '/jcb_portal_demo'
+  )
+    throw new Error(
+      'Demo commands require a plain loopback jcb_portal_demo database URL.',
+    )
+  return value
+}

@@ -8,9 +8,10 @@ const pool = new Pool({
 })
 pool.on('error', () => console.error('Database connection failed'))
 const { app, store, db } = createApp(config, pool)
-const server = app.listen(config.PORT, () =>
-  console.info(`jcb API listening on port ${config.PORT}`),
-)
+const listening = () => console.info(`jcb API listening on port ${config.PORT}`)
+const server = config.LISTEN_HOST
+  ? app.listen(config.PORT, config.LISTEN_HOST, listening)
+  : app.listen(config.PORT, listening)
 let closing = false
 function shutdown() {
   if (closing) return
