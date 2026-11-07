@@ -82,7 +82,9 @@ export function ProjectDeliverables() {
   const { orgId, projectId } = useParams(),
     { user } = useSession(),
     base = `/organizations/${orgId}/projects/${projectId}/deliverables`,
-    resource = useResource<DeliverableListDto>(base)
+    resource = useResource<DeliverableListDto>(base, {
+      retainDataOnReload: user?.role === 'OWNER',
+    })
   const paused =
     resource.data &&
     ['ON_HOLD', 'CANCELLED', 'COMPLETED'].includes(resource.data.project.status)
@@ -93,7 +95,10 @@ export function ProjectDeliverables() {
   return (
     <section>
       <h2>Deliverables</h2>
-      <Failure error={resource.error} reload={resource.reload} />
+      <Failure
+        error={!resource.data ? resource.error : ''}
+        reload={resource.reload}
+      />
       {resource.loading ? (
         <p role="status">Loading deliverables…</p>
       ) : (
@@ -130,16 +135,6 @@ export function ProjectDeliverables() {
               Deliverable acceptance alone does not complete the project. Linked
               resources remain under the external provider's access rules.
             </p>
-            {user?.role === 'OWNER' &&
-              !paused &&
-              resource.data.deliverables.length < 100 && (
-                <ContentForm
-                  key={`new-${resource.data.deliverables.length}`}
-                  base={base}
-                  reload={resource.reload}
-                  position={unused}
-                />
-              )}
             {paused && (
               <p>
                 Workflow changes are unavailable while the project is on hold,
@@ -148,6 +143,26 @@ export function ProjectDeliverables() {
             )}
           </>
         )
+      )}
+      {user?.role === 'OWNER' && resource.data && (
+        <ContentForm
+          key={`new-${base}`}
+          base={base}
+          reload={resource.reload}
+          position={unused}
+          snapshot={resource.data}
+          loading={resource.loading}
+          occupied={resource.data.deliverables.map((d) => d.position)}
+          unavailable={
+            resource.error
+              ? 'The latest state could not be verified. Reload successfully before saving.'
+              : paused
+                ? `This project is ${label(resource.data.project.status)}. Workflow changes are unavailable.`
+                : resource.data.deliverables.length >= 100
+                  ? 'This project already has the maximum 100 deliverables.'
+                  : ''
+          }
+        />
       )}
     </section>
   )
@@ -537,34 +552,45 @@ export function DeliverableEditor() {
   const { orgId, projectId, deliverableId, versionId } = useParams(),
     base = `/organizations/${orgId}/projects/${projectId}/deliverables`,
     path = `${base}/${deliverableId}`,
-    resource = useResource<DeliverableDetailDto>(path)
+    resource = useResource<DeliverableDetailDto>(path, {
+      retainDataOnReload: true,
+    })
   const v = resource.data?.deliverable.versions.find((v) => v.id === versionId)
+  const unavailable = resource.error
+    ? 'The latest state could not be verified. Reload successfully before saving.'
+    : !v
+      ? 'This version is no longer accessible in this deliverable.'
+      : v.state !== 'DRAFT'
+        ? `This version is ${label(v.state)} and cannot be edited.`
+        : ['ON_HOLD', 'CANCELLED', 'COMPLETED'].includes(
+              resource.data?.project.status ?? '',
+            )
+          ? `This project is ${label(resource.data!.project.status)}. Workflow changes are unavailable.`
+          : ''
   return (
     <>
       <Link to={`${path}?version=${versionId}`}>← Deliverable review</Link>
       <h1>Deliverable draft editor</h1>
-      <Failure error={resource.error} reload={resource.reload} />
-      {resource.loading ? (
-        <p role="status">Loading deliverable editor…</p>
-      ) : (
-        resource.data &&
-        (v?.state === 'DRAFT' &&
-        !['ON_HOLD', 'CANCELLED', 'COMPLETED'].includes(
-          resource.data.project.status,
-        ) ? (
-          <ContentForm
-            key={v.id}
-            base={base}
-            deliverableId={deliverableId}
-            version={v}
-            reload={resource.reload}
-          />
-        ) : (
-          <p role="alert">
-            Editable draft unavailable. Published snapshots are locked;
-            held/cancelled or completed projects cannot change.
-          </p>
-        ))
+      <Failure
+        error={!resource.data ? resource.error : ''}
+        reload={resource.reload}
+      />
+      {resource.loading && (
+        <p role="status">
+          Loading deliverable editor… Local input is retained.
+        </p>
+      )}
+      {resource.data && (
+        <ContentForm
+          key={`${path}/${versionId}`}
+          base={base}
+          deliverableId={deliverableId}
+          version={v}
+          reload={resource.reload}
+          snapshot={resource.data}
+          loading={resource.loading}
+          unavailable={unavailable}
+        />
       )}
     </>
   )
@@ -575,12 +601,20 @@ function ContentForm({
   position = 1,
   deliverableId,
   version,
+  snapshot,
+  loading,
+  unavailable,
+  occupied = [],
 }: {
   base: string
   reload: () => void
   position?: number
   deliverableId?: string
   version?: DeliverableVersionDto
+  snapshot: DeliverableListDto | DeliverableDetailDto
+  loading: boolean
+  unavailable: string
+  occupied?: number[]
 }) {
   const navigate = useNavigate(),
     pending = useRef(false),
@@ -596,7 +630,48 @@ function ContentForm({
     [order, setOrder] = useState(position),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(''),
-    [dirty, setDirty] = useState(false)
+    [dirty, setDirty] = useState(false),
+    [revision, setRevision] = useState(version?.revision),
+    [failedSnapshot, setFailedSnapshot] = useState<typeof snapshot | null>(null)
+  const editing = !!deliverableId
+  const reviewRequired =
+    !!failedSnapshot || (editing && version?.revision !== revision)
+  const canReview =
+    !loading && !unavailable && (!failedSnapshot || snapshot !== failedSnapshot)
+  const orderOccupied = !editing && occupied.includes(order)
+  const blocked =
+    busy ||
+    loading ||
+    !!unavailable ||
+    reviewRequired ||
+    orderOccupied ||
+    (editing && !version)
+  function reconcile(discard: boolean) {
+    if (!canReview || pending.current || (editing && !version)) return
+    if (discard) {
+      if (
+        dirty &&
+        !window.confirm(
+          'Discard your local deliverable edits and load the latest server values?',
+        )
+      )
+        return
+      setTitle(version?.title ?? '')
+      setDescription(version?.description ?? '')
+      setLinks(
+        version?.links.map((link) => ({ ...link, key: crypto.randomUUID() })) ??
+          [],
+      )
+      if (!editing) {
+        setRequired(true)
+        setOrder(position)
+      }
+      setDirty(false)
+    }
+    setRevision(version?.revision)
+    setFailedSnapshot(null)
+    setError('')
+  }
   const blocker = useBlocker(() => dirty && !saved.current)
   useEffect(() => {
     const before = (e: BeforeUnloadEvent) => {
@@ -610,14 +685,14 @@ function ContentForm({
   }, [dirty])
   async function save(e: FormEvent) {
     e.preventDefault()
-    if (pending.current) return
+    if (pending.current || blocked) return
     setError('')
     const content = {
         title,
         description,
         links: links.map(({ label, url }) => ({ label, url })),
       },
-      parsed = version
+      parsed = editing
         ? deliverableContentSchema.safeParse(content)
         : deliverableCreateSchema.safeParse({
             ...content,
@@ -634,11 +709,11 @@ function ContentForm({
     setBusy(true)
     try {
       const result = await api<{ deliverableId?: string; versionId: string }>(
-        version ? `${base}/${deliverableId}/versions/${version.id}` : base,
-        version ? 'PATCH' : 'POST',
+        editing ? `${base}/${deliverableId}/versions/${version!.id}` : base,
+        editing ? 'PATCH' : 'POST',
         {
           ...parsed.data,
-          ...(version ? { expectedRevision: version.revision } : {}),
+          ...(editing ? { expectedRevision: revision } : {}),
         },
       )
       saved.current = true
@@ -647,6 +722,7 @@ function ContentForm({
         `${base}/${deliverableId ?? result.deliverableId}?version=${result.versionId}`,
       )
     } catch (e) {
+      setFailedSnapshot(snapshot)
       setError(errorMessage(e))
     } finally {
       pending.current = false
@@ -672,8 +748,8 @@ function ContentForm({
         onChange={() => setDirty(true)}
       >
         <h2>
-          {version
-            ? `Edit owner draft v${version.number}`
+          {editing
+            ? `Edit owner draft v${version?.number ?? 'unavailable'}`
             : 'New deliverable draft'}
         </h2>
         <p>
@@ -681,6 +757,72 @@ function ContentForm({
           replace the current version.
         </p>
         <Failure error={error} reload={reload} />
+        {unavailable && (
+          <p role="alert">{unavailable} Your local input is retained.</p>
+        )}
+        {orderOccupied && (
+          <p role="alert">
+            Display order {order} is occupied. Choose an unused slot; your input
+            has been kept.
+          </p>
+        )}
+        {reviewRequired && (
+          <section
+            className={styles.notice}
+            aria-label="Review latest server deliverable"
+          >
+            <h3>Review the latest server state before saving again</h3>
+            <p>
+              Your local edits have not been replaced. Compare the latest state,
+              then intentionally reconcile/keep your edits or confirm discard.
+              Keeping edits replaces the displayed version values on the next
+              save.
+            </p>
+            {canReview ? (
+              <>
+                {editing && version ? (
+                  <>
+                    <p>Latest server revision: {version.revision}</p>
+                    <h4>Latest title</h4>
+                    <p>{version.title}</p>
+                    <h4>Latest description</h4>
+                    <p className={styles.prose}>{version.description}</p>
+                    <ExternalLinks links={version.links} />
+                  </>
+                ) : (
+                  <p>
+                    Occupied display orders:{' '}
+                    {occupied.length ? occupied.join(', ') : 'None'}. Choose an
+                    unused slot before retrying. No fields have been changed
+                    automatically.
+                  </p>
+                )}
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => reconcile(false)}
+                >
+                  {editing
+                    ? `Keep my edits against revision ${version?.revision}`
+                    : 'Keep my new deliverable edits'}
+                </button>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => reconcile(true)}
+                >
+                  Discard my edits and use latest
+                </button>
+              </>
+            ) : (
+              <p>
+                Reload successfully to review writable server state. Saving is
+                disabled.
+              </p>
+            )}
+          </section>
+        )}
+
         <fieldset disabled={busy} className={styles.editorFields}>
           <label htmlFor="deliverable-title">Deliverable title</label>
           <input
@@ -700,7 +842,7 @@ function ContentForm({
             value={description}
             onChange={(e) => setDescription(e.target.value)}
           />
-          {!version && (
+          {!editing && (
             <>
               <label className={styles.checkLabel}>
                 <input
@@ -789,10 +931,10 @@ function ContentForm({
           >
             Add external link
           </button>
-          <button className={styles.submit} disabled={busy}>
+          <button className={styles.submit} disabled={blocked}>
             {busy
               ? 'Saving…'
-              : version
+              : editing
                 ? 'Save deliverable draft'
                 : 'Create deliverable draft'}
           </button>
