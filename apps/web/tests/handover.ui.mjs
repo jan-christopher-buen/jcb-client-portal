@@ -1018,11 +1018,25 @@ test('pagination retention never carries task data or drafts into another organi
     f.state.otherGate = new Promise((resolve) => {
       release = resolve
     })
+    const destinationRequested = f.page.waitForRequest(
+      (request) =>
+        new URL(request.url()).pathname === '/api' + otherPath &&
+        request.method() === 'GET',
+    )
     await f.page
       .getByRole('link', { name: 'Other fictional workspace', exact: true })
       .click()
     try {
       await f.page.waitForURL('**/organizations/other/projects/other/handover')
+      await destinationRequested
+      // History changes before React commits the destination. Keep its response
+      // gated and assert isolation only after the destination loading render.
+      await f.page
+        .getByRole('status')
+        .filter({ hasText: 'Loading handover' })
+        .waitFor()
+      assert.equal(await f.task('A').count(), 0)
+      assert.equal(await f.task('B').count(), 0)
       assert.equal(
         await f.page.getByLabel('Checklist title', { exact: true }).count(),
         0,
@@ -1032,6 +1046,25 @@ test('pagination retention never carries task data or drafts into another organi
     }
     await f.task('Z').waitFor()
     assert.equal(await f.task('A').count(), 0)
+    assert.equal(await f.task('B').count(), 0)
+    assert.equal(
+      await f.task('Z').getByRole('heading').innerText(),
+      '1. Task Z',
+    )
+    assert.equal(
+      await f
+        .task('Z')
+        .getByText('Server Z', { exact: true })
+        .first()
+        .innerText(),
+      'Server Z',
+    )
+    assert.equal(
+      await f.newForm
+        .getByLabel('Checklist description', { exact: true })
+        .inputValue(),
+      '',
+    )
     assert.equal(
       await f.newForm
         .getByLabel('Checklist title', { exact: true })
