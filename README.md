@@ -121,6 +121,12 @@ npm run db:migrate
 
 Existing owner/client accounts and memberships are retained. Stop/restart development servers after migrating; start the mail sink only when testing invitations.
 
+## Opt-in local demonstration
+
+The [local demo walkthrough](docs/product/local-demo.md) explains separate owner/client sign-in, runtime credentials, key screens and one complete transaction. `demo:seed` requires explicit development/demo configuration and an empty loopback `jcb_portal_demo` database. It applies additive migrations, creates fictional active/completed projects through normal business services and writes generated credentials to a new private file outside the checkout. It never replaces existing data and never runs during normal startup or `db:seed`. `demo:dev` binds API/Vite locally and generates an ephemeral session secret. There is no public demo login or authorization bypass.
+
+See the [M3 checkpoint and release checklist](docs/product/m3-checkpoint.md) for local evidence, pending remote CI, deployment/operational gates and deferred product scope. **The original full MVP is not complete while private uploads/storage and other release requirements remain deferred.**
+
 ## Checks and scripts
 
 ```bash
@@ -140,9 +146,9 @@ GitHub Actions supplies PostgreSQL and runs formatting, lint, types, smoke/integ
 
 ## M2 integration checkpoint
 
-The complete local owner → invitation → client onboarding → proposal approval → project → milestone review journey is implemented and reviewed. See the [checkpoint](docs/product/m2-checkpoint.md) for integration fixes, migration validation, current limits and the next milestone. Local validation covers a clean lockfile install, formatting/lint/types, unit/integration tests, a production build and compiled-server checks; earlier full browser verification is retained. The merged M3 change-request base passed [remote Checks](https://github.com/jan-christopher-buen/jcb-client-portal/actions/runs/42222947067). This handover branch has only local verification until pushed; deployment remains unverified.
+The complete local owner → invitation → client onboarding → proposal approval → project → milestone review journey is implemented and reviewed. See the [checkpoint](docs/product/m2-checkpoint.md) for integration fixes, migration validation, current limits and the next milestone. Local validation covers a clean lockfile install, formatting/lint/types, unit/integration tests, a production build and compiled-server checks; earlier full browser verification is retained. The merged M3 change-request base passed [remote Checks](https://github.com/jan-christopher-buen/jcb-client-portal/actions/runs/42222947067). That run does not verify this checkpoint branch; remote CI remains pending until pushed, and deployment remains unverified.
 
-Database commands require plain loopback URLs with the exact development/test database names; query parameters and fragments are rejected so connection options cannot override safety checks. Use dedicated disposable test data. No reset command is supplied.
+Normal development/test database commands require plain loopback URLs with their exact database names; query parameters and fragments are rejected so connection options cannot override safety checks. Use dedicated disposable test data. No reset command is supplied.
 
 ## Limitations
 
