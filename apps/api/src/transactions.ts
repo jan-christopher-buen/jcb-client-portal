@@ -4,11 +4,12 @@ type Db = Prisma.TransactionClient
 export async function serialTransaction<T>(
   db: PrismaClient,
   run: (tx: Db) => Promise<T>,
+  isolationLevel: 'Serializable' | 'ReadCommitted' = 'Serializable',
 ): Promise<T> {
   for (let attempt = 0; ; attempt++) {
     try {
       return await db.$transaction(run, {
-        isolationLevel: 'Serializable',
+        isolationLevel,
         maxWait: 5000,
         timeout: 10000,
       })
