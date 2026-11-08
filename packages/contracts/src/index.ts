@@ -25,7 +25,13 @@ export const contactUpdateSchema = z
     archived: z.boolean().optional(),
   })
   .strict()
-export const inviteSchema = z.object({ email: emailSchema }).strict()
+export const inviteSchema = z
+  .object({
+    email: emailSchema,
+    requestKey: z.string().uuid(),
+    reissueConfirmed: z.boolean().default(false),
+  })
+  .strict()
 export const tokenSchema = z.string().regex(/^[a-f0-9]{64}$/)
 export const inspectInvitationSchema = z.object({ token: tokenSchema }).strict()
 export const acceptInvitationSchema = z
@@ -70,6 +76,8 @@ export type OrganizationDetail = {
     revokedAt: string | null
     deliveredAt: string | null
     deliveryFailed: boolean
+    deliveryState: string
+    sendDeadline: string | null
   }[]
   activities?: {
     id: string

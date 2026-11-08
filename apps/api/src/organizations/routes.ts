@@ -1,3 +1,4 @@
+import { deliveryState } from '../invitations/service.js'
 import { Router } from 'express'
 import { z } from 'zod'
 import {
@@ -92,6 +93,8 @@ export function organizationRoutes(db: PrismaClient) {
           revokedAt: true,
           deliveredAt: true,
           deliveryFailed: true,
+          deliveryState: true,
+          sendDeadline: true,
         },
       }),
       db.activityEvent.findMany({
@@ -106,7 +109,16 @@ export function organizationRoutes(db: PrismaClient) {
         },
       }),
     ])
-    res.json({ organization, contacts, memberships, invitations, activities })
+    res.json({
+      organization,
+      contacts,
+      memberships,
+      invitations: invitations.map((v) => ({
+        ...v,
+        deliveryState: deliveryState(v),
+      })),
+      activities,
+    })
   })
   router.patch('/:id', requireOwner(), async (req, res) => {
     const { archived, ...data } = organizationUpdateSchema.parse(req.body)

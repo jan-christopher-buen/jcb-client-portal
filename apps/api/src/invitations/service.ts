@@ -1,7 +1,8 @@
 import { createHash, randomBytes } from 'node:crypto'
 import type { PrismaClient, Prisma } from '../generated/prisma/client.js'
 import { HttpError } from '../errors.js'
-import type { Mailer } from './mail.js'
+import { DeliveryError, type Mailer } from './mail.js'
+import { randomUUID } from 'node:crypto'
 import { hashPassword } from '../auth/password.js'
 import { identitySelect } from '../auth/routes.js'
 import { serialTransaction } from '../transactions.js'
@@ -40,93 +41,206 @@ export async function inspectInvitation(db: PrismaClient, token: string) {
     })),
   }
 }
+export function deliveryState(invitation: {
+  deliveryState: string
+  sendDeadline: Date | null
+}) {
+  return invitation.deliveryState === 'sending' &&
+    (!invitation.sendDeadline || invitation.sendDeadline <= new Date())
+    ? 'unconfirmed'
+    : invitation.deliveryState
+}
 export async function createInvitation(
   db: PrismaClient,
   mailer: Mailer,
   organizationId: string,
   email: string,
   actorId: string,
+  requestKey: string = randomUUID(),
+  policy: {
+    validate?: () => void
+    cooldown?: boolean
+    reissueConfirmed?: boolean
+  } = {},
 ) {
-  const token = randomBytes(32).toString('hex')
-  const invitation = await serialTransaction(db, async (tx) => {
-    await tx.$queryRaw`SELECT id FROM organizations WHERE id = ${organizationId}::uuid FOR UPDATE`
-    const organization = await tx.organization.findUnique({
-      where: { id: organizationId },
-    })
-    if (!organization || organization.archivedAt)
-      throw new HttpError(
-        409,
-        'ORGANIZATION_ARCHIVED',
-        'Restore the organization before inviting contacts.',
-      )
-    const previous = await tx.invitation.findMany({
-      where: { organizationId, email, acceptedAt: null, revokedAt: null },
-      select: { id: true },
-    })
-    await tx.invitation.updateMany({
-      where: { id: { in: previous.map((v) => v.id) } },
-      data: { revokedAt: new Date() },
-    })
-    for (const prior of previous)
-      await tx.activityEvent.create({
+  const attempt = await serialTransaction(
+    db,
+    async (tx) => {
+      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${actorId}, 0))::text`
+      const prior = await tx.invitation.findUnique({
+        where: { invitedBy_requestKey: { invitedBy: actorId, requestKey } },
+      })
+      if (prior) {
+        if (prior.organizationId !== organizationId || prior.email !== email)
+          throw new HttpError(
+            409,
+            'IDEMPOTENCY_CONFLICT',
+            'This request key belongs to different invitation input.',
+          )
+        if (
+          deliveryState(prior) === 'unconfirmed' &&
+          prior.deliveryState === 'sending'
+        )
+          await tx.invitation.updateMany({
+            where: {
+              id: prior.id,
+              deliveryState: 'sending',
+              sendDeadline: { lte: new Date() },
+            },
+            data: { deliveryState: 'unconfirmed' },
+          })
+        return {
+          invitation: { ...prior, deliveryState: deliveryState(prior) },
+          token: null,
+          organization: '',
+        }
+      }
+      policy.validate?.()
+      await tx.$queryRaw`SELECT id FROM organizations WHERE id = ${organizationId}::uuid FOR UPDATE`
+      const organization = await tx.organization.findUnique({
+        where: { id: organizationId },
+      })
+      if (!organization || organization.archivedAt)
+        throw new HttpError(
+          409,
+          'ORGANIZATION_ARCHIVED',
+          'Restore the organization before inviting contacts.',
+        )
+      if (policy.cooldown) {
+        await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${email}, 1))::text`
+        if (
+          await tx.invitation.findFirst({
+            where: { email, createdAt: { gt: new Date(Date.now() - 60000) } },
+          })
+        )
+          throw new HttpError(
+            429,
+            'RECIPIENT_COOLDOWN',
+            'Wait one minute before deliberately reissuing to this recipient.',
+          )
+      }
+      const previous = await tx.invitation.findMany({
+        where: { organizationId, email, acceptedAt: null, revokedAt: null },
+        select: { id: true },
+      })
+      if (previous.length && policy.reissueConfirmed === false)
+        throw new HttpError(
+          409,
+          'REISSUE_CONFIRMATION_REQUIRED',
+          'An earlier invitation exists. Confirm deliberate reissue before replacing it.',
+        )
+      await tx.invitation.updateMany({
+        where: { id: { in: previous.map((v) => v.id) } },
+        data: { revokedAt: new Date() },
+      })
+      for (const old of previous)
+        await tx.activityEvent.create({
+          data: {
+            organizationId,
+            actorId,
+            kind: 'INVITATION_REVOKED',
+            targetId: old.id,
+          },
+        })
+      // Generate only after the duplicate check. Neither token nor body is persisted.
+      const token = randomBytes(32).toString('hex')
+      const invitation = await tx.invitation.create({
         data: {
           organizationId,
-          actorId,
-          kind: 'INVITATION_REVOKED',
-          targetId: prior.id,
+          email,
+          invitedBy: actorId,
+          requestKey,
+          tokenHash: tokenHash(token),
+          expiresAt: new Date(Date.now() + 72 * 3600000),
+          deliveryState: 'sending',
+          sendDeadline: new Date(Date.now() + 30000),
         },
       })
-    const created = await tx.invitation.create({
-      data: {
-        organizationId,
-        email,
-        invitedBy: actorId,
-        tokenHash: tokenHash(token),
-        expiresAt: new Date(Date.now() + 72 * 60 * 60 * 1000),
-      },
-    })
-    await tx.activityEvent.create({
-      data: {
-        organizationId,
-        actorId,
-        kind: 'INVITATION_CREATED',
-        targetId: created.id,
-      },
-    })
-    return { ...created, organizationName: organization.name }
-  })
-  try {
-    await mailer({ email, organization: invitation.organizationName, token })
-    await db.invitation.update({
-      where: { id: invitation.id },
-      data: { deliveredAt: new Date() },
-    })
-  } catch {
-    await db.$transaction(async (tx) => {
-      await tx.invitation.update({
-        where: { id: invitation.id },
-        data: { deliveryFailed: true, revokedAt: new Date() },
-      })
       await tx.activityEvent.create({
         data: {
           organizationId,
           actorId,
-          kind: 'INVITATION_DELIVERY_FAILED',
+          kind: 'INVITATION_CREATED',
           targetId: invitation.id,
         },
       })
-    })
-    throw new HttpError(
-      502,
-      'DELIVERY_FAILED',
-      'Invitation delivery failed. Check the local mail sink and reissue the invitation.',
-    )
+      return { invitation, token, organization: organization.name }
+    },
+    'ReadCommitted',
+  )
+  if (attempt.token) {
+    let outcome: 'accepted' | 'failed' | 'unconfirmed' = 'unconfirmed'
+    let providerMessageId: string | undefined
+    try {
+      const result = await mailer({
+        email,
+        organization: attempt.organization,
+        token: attempt.token,
+        invitationId: attempt.invitation.id,
+      })
+      outcome = 'accepted'
+      providerMessageId = result?.id
+    } catch (error) {
+      outcome =
+        error instanceof DeliveryError && !error.ambiguous
+          ? 'failed'
+          : 'unconfirmed'
+    }
+    try {
+      await serialTransaction(db, async (tx) => {
+        const updated = await tx.invitation.updateMany({
+          where: {
+            id: attempt.invitation.id,
+            deliveryState: 'sending',
+            revokedAt: null,
+            acceptedAt: null,
+            sendDeadline: { gt: new Date() },
+          },
+          data: {
+            deliveryState: outcome,
+            providerMessageId,
+            ...(outcome === 'accepted' ? { deliveredAt: new Date() } : {}),
+            ...(outcome === 'failed'
+              ? { deliveryFailed: true, revokedAt: new Date() }
+              : {}),
+          },
+        })
+        if (updated.count && outcome === 'failed')
+          await tx.activityEvent.create({
+            data: {
+              organizationId,
+              actorId,
+              kind: 'INVITATION_DELIVERY_FAILED',
+              targetId: attempt.invitation.id,
+            },
+          })
+      })
+    } catch {
+      // Provider acceptance and its database bookkeeping are separate boundaries.
+      // A lost acknowledgement must never revoke a possibly delivered token.
+      return {
+        id: attempt.invitation.id,
+        email,
+        expiresAt: attempt.invitation.expiresAt,
+        delivery: 'unconfirmed',
+      }
+    }
   }
+  const current = await db.invitation.findUniqueOrThrow({
+    where: { id: attempt.invitation.id },
+  })
   return {
-    id: invitation.id,
+    id: current.id,
     email,
-    expiresAt: invitation.expiresAt,
-    delivery: 'sent',
+    expiresAt: current.expiresAt,
+    delivery:
+      current.deliveryState === 'failed'
+        ? 'failed'
+        : current.revokedAt
+          ? 'revoked'
+          : current.acceptedAt
+            ? 'consumed'
+            : deliveryState(current),
   }
 }
 export async function acceptInvitation(

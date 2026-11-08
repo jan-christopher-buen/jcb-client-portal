@@ -126,6 +126,10 @@ model Invitation {
   organizationId String @map("organization_id") @db.Uuid
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   email String
+  requestKey String? @map("request_key") @db.Uuid
+  deliveryState String @default("unconfirmed") @map("delivery_state")
+  sendDeadline DateTime? @map("send_deadline") @db.Timestamptz(6)
+  providerMessageId String? @map("provider_message_id")
   tokenHash String @unique @map("token_hash")
   invitedBy String @map("invited_by") @db.Uuid
   inviter User @relation(fields: [invitedBy], references: [id], onDelete: Restrict)
@@ -137,6 +141,7 @@ model Invitation {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   @@index([organizationId, email])
   @@index([invitedBy])
+  @@unique([invitedBy, requestKey])
   @@map("invitations")
 }
 model ActivityEvent {

@@ -6,7 +6,7 @@ import {
 } from '@jcb/contracts'
 import type { PrismaClient } from '../generated/prisma/client.js'
 import type { Config } from '../config.js'
-import type { Mailer } from './mail.js'
+import { validateInvitationDelivery, type Mailer } from './mail.js'
 import { requireOwner, throttle } from '../auth/security.js'
 import { establishSession } from '../auth/routes.js'
 import { accessibleOrganization, uuid } from '../organizations/access.js'
@@ -36,6 +36,12 @@ export function invitationRoutes(
           id,
           input.email,
           req.user!.id,
+          input.requestKey,
+          {
+            validate: () => validateInvitationDelivery(config, input.email),
+            cooldown: config.INVITATION_MAIL_MODE === 'resend',
+            reissueConfirmed: input.reissueConfirmed,
+          },
         ),
       })
     },

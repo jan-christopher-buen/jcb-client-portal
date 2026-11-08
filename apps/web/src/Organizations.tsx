@@ -146,6 +146,10 @@ export function Organizations() {
   )
 }
 export function Organization() {
+  const { id } = useParams()
+  return <OrganizationPage key={id} />
+}
+function OrganizationPage() {
   const { id } = useParams(),
     { user } = useSession()
   const [data, setData] = useState<OrganizationDetail | null>(null),
@@ -160,6 +164,11 @@ export function Organization() {
     [contactEmail, setContactEmail] = useState(''),
     [editContact, setEditContact] = useState<string | null>(null),
     [inviteEmail, setInviteEmail] = useState('')
+  const [inviteRequest, setInviteRequest] = useState<{
+    key: string
+    email: string
+  } | null>(null)
+  const [confirmedInviteEmail, setConfirmedInviteEmail] = useState('')
   const base = `/organizations/${id}`
   useEffect(() => {
     let live = true
@@ -239,21 +248,53 @@ export function Organization() {
   }
   async function invite(event: FormEvent) {
     event.preventDefault()
-    const input = inviteSchema.safeParse({ email: inviteEmail })
+    if (busy) return
+    const pending = inviteRequest ?? {
+      key: crypto.randomUUID(),
+      email: inviteEmail.trim().toLowerCase(),
+    }
+    const input = inviteSchema.safeParse({
+      email: pending.email,
+      requestKey: pending.key,
+      reissueConfirmed: confirmedInviteEmail === pending.email,
+    })
     if (!input.success) {
       setError('Enter a valid invitation email.')
       return
     }
-    if (
-      await mutate(
-        '/invitations',
+    setInviteRequest(pending)
+    setBusy(true)
+    setError('')
+    setNotice('')
+    try {
+      const result = await api<{ invitation: { delivery: string } }>(
+        base + '/invitations',
         'POST',
         input.data,
-        'Invitation sent to the local mail sink. Earlier unaccepted invitations for this email were revoked.',
       )
-    )
-      setInviteEmail('')
+      const messages: Record<string, string> = {
+        accepted:
+          'Email accepted by the mail service. Inbox delivery is not confirmed.',
+        sending:
+          'This request is still sending. Check the same request again shortly.',
+        unconfirmed:
+          'Delivery is unconfirmed. Checking again will not send another email. Deliberately reissue if needed.',
+        failed:
+          'Email was rejected. Fix delivery configuration before deliberately reissuing.',
+        revoked: 'This invitation is revoked. Deliberately reissue if needed.',
+        consumed: 'This invitation has already been accepted.',
+      }
+      setNotice(
+        messages[result.invitation.delivery] ?? 'Check invitation history.',
+      )
+      setAttempt((v) => v + 1)
+    } catch (error) {
+      setError(errorMessage(error))
+    } finally {
+      setBusy(false)
+    }
   }
+
   return (
     <>
       <Link to="/organizations">← Organizations</Link>
@@ -357,6 +398,7 @@ export function Organization() {
                         type="email"
                         required
                         maxLength={254}
+                        disabled={busy || !!inviteRequest}
                         value={inviteEmail}
                         onChange={(e) => setInviteEmail(e.target.value)}
                       />
@@ -364,12 +406,16 @@ export function Organization() {
                         className={styles.submit}
                         disabled={busy || !!data.organization.archivedAt}
                       >
-                        {busy ? 'Working…' : 'Send invitation'}
+                        {busy
+                          ? 'Working…'
+                          : inviteRequest
+                            ? 'Check previous request'
+                            : 'Send invitation'}
                       </button>
                     </form>
                     <p className={styles.description}>
-                      Delivery uses the local mail sink. No external email is
-                      sent.
+                      Check invitation status below. Mail-service acceptance
+                      does not confirm inbox delivery.
                     </p>
                   </section>
                 </div>
@@ -495,6 +541,25 @@ export function Organization() {
                     <p>No client memberships yet.</p>
                   )}
                 </section>
+                {inviteRequest && (
+                  <button
+                    disabled={busy}
+                    onClick={() => {
+                      if (
+                        window.confirm(
+                          'Start a new invitation? Sending it will revoke earlier unaccepted invitations for this organization and email.',
+                        )
+                      ) {
+                        setConfirmedInviteEmail(inviteRequest.email)
+                        setInviteRequest(null)
+                        setNotice('')
+                        setError('')
+                      }
+                    }}
+                  >
+                    Start new invitation / deliberate reissue
+                  </button>
+                )}
                 <section className={styles.panel}>
                   <h2>Invitation history</h2>
                   <ul className={styles.recordList}>
@@ -503,7 +568,7 @@ export function Organization() {
                         <span>{invite.email}</span>
                         <span>
                           {invite.deliveryFailed
-                            ? 'Delivery failed'
+                            ? 'Delivery rejected'
                             : invite.acceptedAt
                               ? 'Accepted'
                               : invite.revokedAt
@@ -511,8 +576,13 @@ export function Organization() {
                                 : new Date(invite.expiresAt) <= new Date()
                                   ? 'Expired'
                                   : invite.deliveredAt
-                                    ? 'Sent'
-                                    : 'Delivery pending'}
+                                    ? 'Accepted by mail service'
+                                    : invite.deliveryState === 'sending' &&
+                                        invite.sendDeadline &&
+                                        new Date(invite.sendDeadline) >
+                                          new Date()
+                                      ? 'Sending (check again shortly)'
+                                      : 'Delivery unconfirmed'}
                         </span>
                       </li>
                     ))}

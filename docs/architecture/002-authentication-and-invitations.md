@@ -29,6 +29,8 @@ Contacts are business records only and never establish authorization. Owner-only
 
 ## Delivery and activity
 
+Delivery details below describe the original local slice. [ADR-009](009-invitation-email.md) supersedes its failure/retry and production-mode policy; token/acceptance security remains unchanged.
+
 Development uses Nodemailer SMTP to a loopback-only sink. `mail:dev` binds SMTP 1025 and its inbox UI 8025 to 127.0.0.1, keeps at most fifty messages in memory, and sends no external mail. Normal portal API responses return delivery status and safe invitation metadata, never a raw token or digest. The separate local inbox intentionally displays received email content. Do not expose the sink beyond localhost.
 
 SMTP delivery occurs after the invitation transaction. Failure revokes the newly issued invitation, records failure, and returns a useful error asking the owner to fix the sink and reissue. Sending is synchronous without an outbox or retries, so process crashes can leave pending delivery. Reissue is the recovery mechanism. Production delivery is disabled pending a separately selected provider and durable delivery policy; no invitation URL is exposed in the portal UI.

@@ -16,6 +16,8 @@ import { createHmac, randomUUID } from 'node:crypto'
 import { createApp } from '../src/app.js'
 import { readConfig } from '../src/config.js'
 import { createDatabase } from '../src/database.js'
+import { createInvitation } from '../src/invitations/service.js'
+import { DeliveryError } from '../src/invitations/mail.js'
 import { hashPassword, verifyPassword } from '../src/auth/password.js'
 import { testDatabase } from '../../../scripts/database-safety.js'
 import { createMailSink } from '../../../scripts/mail-sink-server.js'
@@ -102,6 +104,8 @@ async function login(user: Identity) {
 async function invite(client: Agent, to: string, org = orgA) {
   const response = await post(client, `/api/organizations/${org}/invitations`, {
     email: to,
+    requestKey: randomUUID(),
+    reissueConfirmed: true,
   })
   expect(response.status).toBe(201)
   const token = sink.messages[0]!.text.match(/#token=([a-f0-9]{64})/)![1]!
@@ -843,7 +847,7 @@ describe('invitations and onboarding', () => {
     const failed = createApp(config, pool, {
       db,
       mailer: async () => {
-        throw new Error('SMTP unavailable')
+        throw new DeliveryError(false)
       },
     })
     const failedServer = failed.app.listen(0, '127.0.0.1')
@@ -861,10 +865,11 @@ describe('invitations and onboarding', () => {
       const result = await post(
         client,
         `/api/organizations/${orgA}/invitations`,
-        { email: email('delivery-failed') },
+        { email: email('delivery-failed'), requestKey: randomUUID() },
       )
-      expect(result.status).toBe(502)
-      expect(Object.keys(result.body)).toEqual(['error'])
+      expect(result.status).toBe(201)
+      expect(result.body.invitation.delivery).toBe('failed')
+      expect(JSON.stringify(result.body)).not.toContain('token')
       const invitation = await db.invitation.findFirstOrThrow({
         where: { email: email('delivery-failed') },
       })
@@ -875,4 +880,252 @@ describe('invitations and onboarding', () => {
       failed.store.close()
     }
   })
+})
+
+describe('invitation delivery boundaries', () => {
+  it('deduplicates concurrent requests across separate connections without another send', async () => {
+    const key = randomUUID(),
+      address = email('dedup')
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let started!: () => void
+    const entered = new Promise<void>((resolve) => {
+      started = resolve
+    })
+    const send = vi.fn(async () => {
+      started()
+      await gate
+      return { id: 'mock-message' }
+    })
+    const first = createInvitation(db, send, orgA, address, owner.id, key)
+    await entered
+    try {
+      const duplicate = await createInvitation(
+        dbB,
+        send,
+        orgA,
+        address,
+        owner.id,
+        key,
+      )
+      expect(duplicate.delivery).toBe('sending')
+      expect(send).toHaveBeenCalledTimes(1)
+      await expect(
+        createInvitation(dbB, send, orgB, address, owner.id, key),
+      ).rejects.toMatchObject({ code: 'IDEMPOTENCY_CONFLICT' })
+    } finally {
+      release()
+    }
+    const result = await first
+    expect(
+      await createInvitation(dbB, send, orgA, address, owner.id, key),
+    ).toEqual(result)
+    expect(send).toHaveBeenCalledTimes(1)
+  })
+  it('does not revive an invitation reissued while its send is in flight', async () => {
+    const address = email('send-race')
+    let release!: () => void, started!: () => void
+    const entered = new Promise<void>((resolve) => {
+      started = resolve
+    })
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const pending = createInvitation(
+      db,
+      async () => {
+        started()
+        await gate
+      },
+      orgA,
+      address,
+      owner.id,
+    )
+    await entered
+    try {
+      await createInvitation(dbB, async () => {}, orgA, address, owner.id)
+    } finally {
+      release()
+    }
+    expect((await pending).delivery).toBe('revoked')
+  })
+  it('expires crashed sends on duplicate lookup without resending or revocation', async () => {
+    const key = randomUUID(),
+      address = email('crash')
+    const row = await db.invitation.create({
+      data: {
+        organizationId: orgA,
+        email: address,
+        invitedBy: owner.id,
+        requestKey: key,
+        tokenHash: randomUUID(),
+        expiresAt: new Date(Date.now() + 100000),
+        deliveryState: 'sending',
+        sendDeadline: new Date(Date.now() - 1000),
+      },
+    })
+    const send = vi.fn(async () => {})
+    const result = await createInvitation(
+      dbB,
+      send,
+      orgA,
+      address,
+      owner.id,
+      key,
+    )
+    expect(result.delivery).toBe('unconfirmed')
+    expect(send).not.toHaveBeenCalled()
+    expect(
+      (await db.invitation.findUniqueOrThrow({ where: { id: row.id } }))
+        .revokedAt,
+    ).toBeNull()
+  })
+  it('retains valid tokens after ambiguous failures and forbids retries from creating tokens', async () => {
+    const key = randomUUID(),
+      address = email('timeout'),
+      send = vi.fn(async () => {
+        throw new DeliveryError(true)
+      })
+    const first = await createInvitation(db, send, orgA, address, owner.id, key)
+    expect(first.delivery).toBe('unconfirmed')
+    expect(
+      await createInvitation(dbB, send, orgA, address, owner.id, key),
+    ).toEqual(first)
+    expect(send).toHaveBeenCalledTimes(1)
+    expect(
+      (await db.invitation.findUniqueOrThrow({ where: { id: first.id } }))
+        .revokedAt,
+    ).toBeNull()
+  })
+  it('leaves possibly accepted invitations valid when recording acceptance fails', async () => {
+    const address = email('ack-failure')
+    const result = await createInvitation(
+      db,
+      async () => {
+        vi.spyOn(db, '$transaction').mockRejectedValueOnce(
+          new Error('injected commit failure'),
+        )
+        return { id: 'accepted-message' }
+      },
+      orgA,
+      address,
+      owner.id,
+    )
+    vi.restoreAllMocks()
+    expect(result.delivery).toBe('unconfirmed')
+    const row = await dbB.invitation.findUniqueOrThrow({
+      where: { id: result.id },
+    })
+    expect(row.revokedAt).toBeNull()
+    expect(row.deliveryState).toBe('sending')
+  })
+  it('applies cooldown across organizations and validates policy before any invitation changes', async () => {
+    const address = email('cooldown'),
+      send = vi.fn(async () => {})
+    const first = await createInvitation(
+      db,
+      send,
+      orgA,
+      address,
+      owner.id,
+      randomUUID(),
+      { cooldown: true },
+    )
+    await expect(
+      createInvitation(dbB, send, orgB, address, owner.id, randomUUID(), {
+        cooldown: true,
+      }),
+    ).rejects.toMatchObject({ code: 'RECIPIENT_COOLDOWN' })
+    await expect(
+      createInvitation(dbB, send, orgA, address, owner.id, randomUUID(), {
+        validate: () => {
+          throw new Error('blocked')
+        },
+      }),
+    ).rejects.toThrow('blocked')
+    expect(
+      (await db.invitation.findUniqueOrThrow({ where: { id: first.id } }))
+        .revokedAt,
+    ).toBeNull()
+    expect(send).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('delivery rollback and recipient coordination', () => {
+  it('rolls back revocation and failure activity together when history insertion fails', async () => {
+    const failing = db.$extends({
+      query: {
+        activityEvent: {
+          async create({ args, query }) {
+            if (args.data.kind === 'INVITATION_DELIVERY_FAILED')
+              throw new Error('injected activity failure')
+            return query(args)
+          },
+        },
+      },
+    }) as unknown as typeof db
+    const result = await createInvitation(
+      failing,
+      async () => {
+        throw new DeliveryError(false)
+      },
+      orgA,
+      email('rollback-mail'),
+      owner.id,
+    )
+    expect(result.delivery).toBe('unconfirmed')
+    const row = await dbB.invitation.findUniqueOrThrow({
+      where: { id: result.id },
+    })
+    expect(row.revokedAt).toBeNull()
+    expect(row.deliveryFailed).toBe(false)
+    expect(
+      await dbB.activityEvent.count({
+        where: { targetId: row.id, kind: 'INVITATION_DELIVERY_FAILED' },
+      }),
+    ).toBe(0)
+  })
+  it('coordinates simultaneous recipient sends to different organizations', async () => {
+    const address = email('parallel-recipient'),
+      send = vi.fn(async () => {})
+    const results = await Promise.allSettled([
+      createInvitation(db, send, orgA, address, owner.id, randomUUID(), {
+        cooldown: true,
+      }),
+      createInvitation(dbB, send, orgB, address, owner.id, randomUUID(), {
+        cooldown: true,
+      }),
+    ])
+    expect(results.filter((v) => v.status === 'fulfilled')).toHaveLength(1)
+    expect(results.filter((v) => v.status === 'rejected')).toHaveLength(1)
+    expect(send).toHaveBeenCalledTimes(1)
+  })
+})
+
+it('requires deliberate reissue on the HTTP boundary even after losing browser state', async () => {
+  const own = await login(owner),
+    address = email('confirm-reissue')
+  const old = await invite(own, address)
+  const input = { email: address, requestKey: randomUUID() }
+  expect(
+    (await post(own, `/api/organizations/${orgA}/invitations`, input)).status,
+  ).toBe(409)
+  expect(
+    (await db.invitation.findUniqueOrThrow({ where: { id: old.id } }))
+      .revokedAt,
+  ).toBeNull()
+  expect(
+    (
+      await post(own, `/api/organizations/${orgA}/invitations`, {
+        ...input,
+        reissueConfirmed: true,
+      })
+    ).status,
+  ).toBe(201)
+  expect(
+    (await db.invitation.findUniqueOrThrow({ where: { id: old.id } }))
+      .revokedAt,
+  ).not.toBeNull()
 })

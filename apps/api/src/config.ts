@@ -17,6 +17,10 @@ const schema = z.object({
         return false
       }
     }),
+  INVITATION_MAIL_MODE: z.enum(['disabled', 'local', 'resend']).optional(),
+  RESEND_API_KEY: z.string().min(1).optional(),
+  INVITATION_FROM: z.string().email().optional(),
+  STAGING_INVITATION_RECIPIENTS: z.string().optional(),
   SMTP_HOST: z.enum(['127.0.0.1', 'localhost', '::1']).default('127.0.0.1'),
   SMTP_PORT: z.coerce.number().int().min(1).max(65535).default(1025),
   SESSION_SECRET: z.string().min(32),
@@ -55,6 +59,27 @@ export function readConfig(env: NodeJS.ProcessEnv) {
         'Production database requires verified TLS without connection overrides.',
       )
   }
-  return result.data
+  const mode =
+    result.data.INVITATION_MAIL_MODE ??
+    (result.data.NODE_ENV === 'production' ? 'disabled' : 'local')
+  const recipients = (result.data.STAGING_INVITATION_RECIPIENTS ?? '')
+    .split(',')
+    .map((v) => v.trim().toLowerCase())
+    .filter(Boolean)
+  if (
+    (mode === 'local' && result.data.NODE_ENV === 'production') ||
+    (mode === 'resend' &&
+      (origin.protocol !== 'https:' ||
+        !result.data.RESEND_API_KEY ||
+        !result.data.INVITATION_FROM ||
+        !recipients.length ||
+        recipients.some((v) => !z.string().email().safeParse(v).success)))
+  )
+    throw new Error('Invalid invitation mail configuration.')
+  return {
+    ...result.data,
+    INVITATION_MAIL_MODE: mode,
+    invitationRecipients: recipients,
+  }
 }
 export type Config = ReturnType<typeof readConfig>
