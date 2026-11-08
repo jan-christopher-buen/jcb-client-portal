@@ -183,3 +183,34 @@ test('reissue requires confirmation and generates a fresh request key only after
     await context.close()
   }
 })
+
+test('invitation delivery wording stays mode-neutral and distinguishes provider acceptance from inbox delivery', async () => {
+  const { page, state, context } = await fixture()
+  try {
+    const content = await page.locator('body').innerText()
+    assert.doesNotMatch(
+      content,
+      /local(?:[-\s]+only)?\s+mail\s+sink|local[-\s]+only\s+delivery|no\s+external\s+email/i,
+    )
+    await page
+      .getByText(
+        'Check invitation status below. Mail-service acceptance does not confirm inbox delivery.',
+        { exact: true },
+      )
+      .waitFor()
+    state.status = 201
+    state.delivery = 'accepted'
+    await page
+      .getByRole('button', { name: 'Send invitation', exact: true })
+      .click()
+    await page
+      .getByRole('status')
+      .filter({
+        hasText:
+          'Email accepted by the mail service. Inbox delivery is not confirmed.',
+      })
+      .waitFor()
+  } finally {
+    await context.close()
+  }
+})

@@ -414,8 +414,8 @@ function OrganizationPage() {
                       </button>
                     </form>
                     <p className={styles.description}>
-                      Delivery uses the local mail sink. No external email is
-                      sent.
+                      Check invitation status below. Mail-service acceptance
+                      does not confirm inbox delivery.
                     </p>
                   </section>
                 </div>
