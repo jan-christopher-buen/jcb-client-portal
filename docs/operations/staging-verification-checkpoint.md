@@ -6,7 +6,7 @@ This document summarizes observed results. Private operator transcripts, credent
 
 ## Release and CI evidence
 
-The deployed release was reconfirmed as [`94aa209c325bb70a0b83133003fe17c717a794a2`](https://github.com/jan-christopher-buen/jcb-client-portal/commit/94aa209c325bb70a0b83133003fe17c717a794a2). Its [GitHub Actions run](https://github.com/jan-christopher-buen/jcb-client-portal/actions/runs/42432426687) passed. This verifies that release, not CI for this later documentation branch; branch CI remains pending until separately pushed and executed.
+The deployed release was reconfirmed as [`94aa209c325bb70a0b83133003fe17c717a794a2`](https://github.com/jan-christopher-buen/jcb-client-portal/commit/94aa209c325bb70a0b83133003fe17c717a794a2). Its [GitHub Actions run](https://github.com/jan-christopher-buen/jcb-client-portal/actions/runs/42432426687) passed. The documentation checkpoint at `ce5db67` also passed [GitHub Actions run 42584919889](https://github.com/jan-christopher-buen/jcb-client-portal/actions/runs/42584919889). These runs verify their exact commits; later revisions require their own CI results.
 
 The same SHA was redeployed once with the existing build cache retained (`do_not_clear`). Render recorded successful completion at 19:59:41 on November 8. Subsequent hosted checks observed one visible instance, health JSON 200, frontend and sign-in SPA 200, a referenced frontend asset 200, and anonymous protected API 401. Private environment values matched the operator-recorded release inputs before and after that deployment. Render's deployment detail does not expose an immutable environment snapshot, so this was a comparison with release records rather than introspection of process environment.
 
@@ -17,7 +17,7 @@ The same SHA was redeployed once with the existing build cache retained (`do_not
 - The second organization's membership revocation is preserved as an owner-attributed audit event. A subsequently reissued invitation revoked an older unconsumed invitation. The operator observed the old link being rejected and accepted its replacement. Database checks confirmed the old invitation remained revoked/unconsumed, the replacement was consumed/not revoked, and the existing membership was reactivated with consistent client acceptance/activation events.
 - Provider acceptance and inbox receipt were treated separately: delivery metadata recorded acceptance; actual email opening/onboarding was operator-observed. This one-inbox test does not establish unrestricted production delivery or isolation between distinct client identities.
 
-Direct protected-API denial while that membership was revoked was not captured as a completed hosted checkpoint. The final restored snapshot contains the later reactivated membership; it cannot itself prove what the earlier browser/API response was.
+The user reported that organization B’s protected API returned 404 before closing the client session, and that organization A’s protected API returned 200 after signing in again. These are user-reported observations from different sessions, not independently captured HTTP evidence or a same-session A/B comparison. The final restored snapshot contains the later reactivated membership; it cannot itself prove those earlier responses. This remains one client identity across two organizations, not an isolation test between two distinct clients.
 
 See [authentication and invitations](../architecture/002-authentication-and-invitations.md) and [invitation email delivery](../architecture/009-invitation-email.md).
 
@@ -86,11 +86,11 @@ A single same-SHA cached redeployment restored observed HTTP availability. **The
 
 Unverified or deferred:
 
-- Isolation between two distinct client identities; the hosted A/B journey used one client identity. Revoked-member direct API denial remains a separate hosted gap.
+- Isolation between two distinct client identities; the hosted A/B journey used one client identity. Revoked B API 404 and accessible A API 200 are user-reported observations from different sessions. Independently captured revoked-member HTTP denial and a same-session A/B comparison remain unverified.
 - Hosted delayed-session-save/logout race, concurrent mutations and race/rollback scenarios. Local tests do not substitute for hosted execution.
 - Other completed-state write endpoints, new pending decisions after completion, full browser UI write prevention, concurrent requests, stale-editor recovery, mobile/keyboard and all error states in this hosted journey.
 - Ownership/ACL/role recovery, recovery-session invalidation, production restore deployment, retention/deletion policy and operational recovery guarantees.
 - Root cause and long-term resolution of the availability incident; successful bounded checks do not establish an uptime guarantee.
 - Production email readiness beyond one allowlisted inbox, delivery webhooks/durable outbox, private uploads/storage, recovery/MFA, billing and AI. The original full MVP remains incomplete.
 
-Historical [M2](../product/m2-checkpoint.md) and [M3](../product/m3-checkpoint.md) checkpoints describe earlier local evidence and gates; this document updates the specifically observed staging scope without retroactively claiming those earlier branches ran hosted tests. CI for this documentation branch is pending until separately pushed and executed.
+Historical [M2](../product/m2-checkpoint.md) and [M3](../product/m3-checkpoint.md) checkpoints describe earlier local evidence and gates; this document updates the specifically observed staging scope without retroactively claiming those earlier branches ran hosted tests. Documentation commit `ce5db67` passed run 42584919889; subsequent revisions require their own CI results.
